@@ -1,0 +1,167 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Rebrand palette */
+  --background: #CCD0CF;
+  --foreground: #06141B;
+  --card: #9BA8AB;
+  --card-foreground: #06141B;
+  --popover: #9BA8AB;
+  --popover-foreground: #06141B;
+  --primary: #11212D;
+  --primary-foreground: #CCD0CF;
+  --secondary: #9BA8AB;
+  --secondary-foreground: #06141B;
+  --muted: #9BA8AB;
+  --muted-foreground: #253745;
+  --accent: #4A5C6A;
+  --accent-foreground: #CCD0CF;
+  --destructive: #253745;
+  --destructive-foreground: #CCD0CF;
+  --success: #253745;
+  --success-foreground: #CCD0CF;
+  --warning: #4A5C6A;
+  --warning-foreground: #CCD0CF;
+  --border: #4A5C6A;
+  --input: #9BA8AB;
+  --ring: #253745;
+  --chart-1: #06141B;
+  --chart-2: #11212D;
+  --chart-3: #253745;
+  --chart-4: #4A5C6A;
+  --chart-5: #9BA8AB;
+  --radius: 0.75rem;
+  --sidebar: #06141B;
+  --sidebar-foreground: #CCD0CF;
+  --sidebar-primary: #CCD0CF;
+  --sidebar-primary-foreground: #06141B;
+  --sidebar-accent: #11212D;
+  --sidebar-accent-foreground: #CCD0CF;
+  --sidebar-border: #253745;
+  --sidebar-ring: #9BA8AB;
+
+  /* Custom aliases kept for page-level utilities */
+  --midnight: #06141B;
+  --lionsmane: #CCD0CF;
+  --celeste: #9BA8AB;
+  --celeste-foreground: #06141B;
+  --herb: #253745;
+  --herb-foreground: #CCD0CF;
+  --marigold: #4A5C6A;
+  --marigold-foreground: #CCD0CF;
+}
+
+.dark {
+  --background: #06141B;
+  --foreground: #CCD0CF;
+  --card: #11212D;
+  --card-foreground: #CCD0CF;
+  --popover: #11212D;
+  --popover-foreground: #CCD0CF;
+  --primary: #CCD0CF;
+  --primary-foreground: #06141B;
+  --secondary: #253745;
+  --secondary-foreground: #CCD0CF;
+  --muted: #11212D;
+  --muted-foreground: #9BA8AB;
+  --accent: #4A5C6A;
+  --accent-foreground: #CCD0CF;
+  --destructive: #4A5C6A;
+  --destructive-foreground: #CCD0CF;
+  --success: #253745;
+  --success-foreground: #CCD0CF;
+  --warning: #9BA8AB;
+  --warning-foreground: #06141B;
+  --border: #253745;
+  --input: #11212D;
+  --ring: #9BA8AB;
+  --chart-1: #CCD0CF;
+  --chart-2: #9BA8AB;
+  --chart-3: #4A5C6A;
+  --chart-4: #253745;
+  --chart-5: #11212D;
+  --sidebar: #06141B;
+  --sidebar-foreground: #CCD0CF;
+  --sidebar-primary: #CCD0CF;
+  --sidebar-primary-foreground: #06141B;
+  --sidebar-accent: #11212D;
+  --sidebar-accent-foreground: #CCD0CF;
+  --sidebar-border: #253745;
+  --sidebar-ring: #9BA8AB;
+
+  --midnight: #06141B;
+  --lionsmane: #CCD0CF;
+  --celeste: #9BA8AB;
+  --celeste-foreground: #06141B;
+  --herb: #4A5C6A;
+  --herb-foreground: #CCD0CF;
+  --marigold: #253745;
+  --marigold-foreground: #CCD0CF;
+}
+
+@theme inline {
+  --font-sans: 'Hanken Grotesk', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  
+  /* Custom color tokens */
+  --color-midnight: var(--midnight);
+  --color-lionsmane: var(--lionsmane);
+  --color-celeste: var(--celeste);
+  --color-celeste-foreground: var(--celeste-foreground);
+  --color-herb: var(--herb);
+  --color-herb-foreground: var(--herb-foreground);
+  --color-marigold: var(--marigold);
+  --color-marigold-foreground: var(--marigold-foreground);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
