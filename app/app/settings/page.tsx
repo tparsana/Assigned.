@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import {
   Settings,
   User,
@@ -642,17 +643,11 @@ export default function SettingsPage() {
                       <div className="font-medium text-foreground">{item.title}</div>
                       <div className="text-sm text-muted-foreground">{item.description}</div>
                     </div>
-                    <label className="relative inline-flex cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={notifications[item.key]}
-                        onChange={(event) => updateNotificationSetting(item.key, event.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary transition-colors">
-                        <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-card rounded-full transition-transform peer-checked:translate-x-5" />
-                      </div>
-                    </label>
+                    <Switch
+                      checked={notifications[item.key]}
+                      onCheckedChange={(checked) => updateNotificationSetting(item.key, checked)}
+                      aria-label={item.title}
+                    />
                   </div>
                 ))}
               </div>
@@ -762,17 +757,11 @@ export default function SettingsPage() {
                       Collapse the app into one quiet task page with simple list management.
                     </div>
                   </div>
-                  <label className="relative inline-flex cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={preferences.minimalMode}
-                      onChange={(event) => updatePreferences({ minimalMode: event.target.checked })}
-                      className="sr-only peer"
-                    />
-                    <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary transition-colors">
-                      <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-card rounded-full transition-transform peer-checked:translate-x-5" />
-                    </div>
-                  </label>
+                  <Switch
+                    checked={preferences.minimalMode}
+                    onCheckedChange={(checked) => updatePreferences({ minimalMode: checked })}
+                    aria-label="Minimal Mode"
+                  />
                 </div>
               </div>
             </div>
@@ -813,17 +802,11 @@ export default function SettingsPage() {
                       <div className="font-medium text-foreground">{item.title}</div>
                       <div className="text-sm text-muted-foreground">{item.description}</div>
                     </div>
-                    <label className="relative inline-flex cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={ai[item.key]}
-                        onChange={(event) => updateAISetting(item.key, event.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary transition-colors">
-                        <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-card rounded-full transition-transform peer-checked:translate-x-5" />
-                      </div>
-                    </label>
+                    <Switch
+                      checked={ai[item.key]}
+                      onCheckedChange={(checked) => updateAISetting(item.key, checked)}
+                      aria-label={item.title}
+                    />
                   </div>
                 ))}
               </div>
@@ -891,17 +874,11 @@ export default function SettingsPage() {
                         <div className="text-sm text-muted-foreground">Allow anonymous usage metrics on this device</div>
                       </div>
                     </div>
-                    <label className="relative inline-flex cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={privacy.allowAnalytics}
-                        onChange={(event) => setPrivacySetting("allowAnalytics", event.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-muted rounded-full peer peer-checked:bg-primary transition-colors">
-                        <div className="absolute top-0.5 left-0.5 w-5 h-5 bg-card rounded-full transition-transform peer-checked:translate-x-5" />
-                      </div>
-                    </label>
+                    <Switch
+                      checked={privacy.allowAnalytics}
+                      onCheckedChange={(checked) => setPrivacySetting("allowAnalytics", checked)}
+                      aria-label="Usage Analytics"
+                    />
                   </div>
 
                   <Button variant="outline" className="h-auto w-full justify-between border-border py-4" asChild>
