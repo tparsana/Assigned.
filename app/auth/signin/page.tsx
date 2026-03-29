@@ -1,28 +1,71 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { Eye, EyeOff } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Eye, EyeOff } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 export default function SignInPage() {
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [info, setInfo] = useState("")
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  useEffect(() => {
+    let active = true
+
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!active || !data.user) {
+        return
+      }
+
+      router.replace("/app")
+      router.refresh()
+    })
+
+    return () => {
+      active = false
+    }
+  }, [router, supabase])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    setInfo(params.get("error") ?? "")
+  }, [])
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError("")
+    setInfo("")
     setIsLoading(true)
-    // Simulate loading then redirect
-    setTimeout(() => {
-      window.location.href = '/app'
-    }, 1000)
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    setIsLoading(false)
+
+    if (signInError) {
+      setError(signInError.message)
+      return
+    }
+
+    router.replace("/app")
+    router.refresh()
   }
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Left side - Form */}
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-10">
@@ -41,6 +84,8 @@ export default function SignInPage() {
                 id="email"
                 type="email"
                 placeholder="you@example.com"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
                 required
                 className="h-12 bg-card border-border focus:border-primary"
               />
@@ -49,8 +94,8 @@ export default function SignInPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password" className="text-foreground">Password</Label>
-                <Link 
-                  href="/auth/forgot-password" 
+                <Link
+                  href="/auth/forgot-password"
                   className="text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Forgot password?
@@ -61,12 +106,14 @@ export default function SignInPage() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                   required
                   className="h-12 bg-card border-border focus:border-primary pr-12"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
+                  onClick={() => setShowPassword((current) => !current)}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                 >
                   {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
@@ -74,8 +121,11 @@ export default function SignInPage() {
               </div>
             </div>
 
-            <Button 
-              type="submit" 
+            {error && <p className="text-sm text-destructive">{error}</p>}
+            {info && <p className="text-sm text-muted-foreground">{info}</p>}
+
+            <Button
+              type="submit"
               className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg"
               disabled={isLoading}
             >
@@ -94,7 +144,6 @@ export default function SignInPage() {
         </div>
       </div>
 
-      {/* Right side - Visual */}
       <div className="hidden lg:flex flex-1 bg-primary items-center justify-center p-12">
         <div className="max-w-md text-center">
           <div className="text-5xl font-semibold text-primary-foreground mb-6">

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -22,6 +23,7 @@ import {
   Bell,
   Sparkles
 } from "lucide-react"
+import { useTaskedState } from "@/lib/tasked-store"
 
 const steps = [
   { id: 1, title: "Areas", description: "What areas do you want to organize?" },
@@ -56,6 +58,8 @@ const goals = [
 ]
 
 export default function OnboardingPage() {
+  const router = useRouter()
+  const { addList, lists, updateNotificationSetting, updatePreferences } = useTaskedState()
   const [currentStep, setCurrentStep] = useState(1)
   const [selectedAreas, setSelectedAreas] = useState<string[]>([])
   const [selectedMethods, setSelectedMethods] = useState<string[]>(["top3"])
@@ -86,9 +90,35 @@ export default function OnboardingPage() {
       setCurrentStep(currentStep + 1)
     } else {
       setIsLoading(true)
-      setTimeout(() => {
-        window.location.href = '/app'
-      }, 1500)
+      window.setTimeout(() => {
+        const existingListNames = new Set(lists.map((list) => list.name.toLowerCase()))
+
+        selectedAreas.forEach((areaId) => {
+          const area = areas.find((value) => value.id === areaId)
+          if (!area) {
+            return
+          }
+
+          const nextListName = area.label.replace(" / ", " & ")
+          if (!existingListNames.has(nextListName.toLowerCase())) {
+            addList(nextListName)
+          }
+        })
+
+        updatePreferences({
+          defaultPlanningMethod:
+            selectedMethods[0] === "timeblock"
+              ? "time-blocking"
+              : selectedMethods[0] === "kanban"
+                ? "kanban"
+                : selectedMethods[0] === "ivylee"
+                  ? "ivylee"
+                  : "top3",
+          workHours,
+        })
+        updateNotificationSetting("dailyPlanningReminder", true)
+        router.replace("/app")
+      }, 350)
     }
   }
 

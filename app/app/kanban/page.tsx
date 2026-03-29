@@ -1,136 +1,316 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+
+import { AddTaskDialog } from "@/components/add-task-dialog"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import {
   LayoutGrid,
-  Plus,
-  Filter,
   MoreHorizontal,
   Calendar,
-  Tag,
   AlertCircle,
   CheckCircle2,
-  Clock,
-  GripVertical
 } from "lucide-react"
+import {
+  formatTaskDateLabel,
+  getDaysOverdue,
+  getTaskListName,
+  useTaskedState,
+  type BoardColumn,
+  type Task,
+  type TaskList,
+} from "@/lib/tasked-store"
 
-interface KanbanTask {
-  id: number
-  title: string
-  category: string
-  priority: "high" | "medium" | "low"
-  dueDate?: string
-  tags?: string[]
-  isOverdue?: boolean
-}
-
-interface Column {
-  id: string
-  title: string
-  tasks: KanbanTask[]
-  color: string
-}
-
-const initialColumns: Column[] = [
-  {
-    id: "inbox",
-    title: "Inbox",
-    color: "bg-muted",
-    tasks: [
-      { id: 1, title: "Research competitor pricing", category: "Work", priority: "low", tags: ["research"] },
-      { id: 2, title: "Update LinkedIn profile", category: "Personal", priority: "low" },
-    ]
-  },
-  {
-    id: "today",
-    title: "Today",
-    color: "bg-primary/10",
-    tasks: [
-      { id: 3, title: "Finish Q2 report", category: "Work", priority: "high", dueDate: "Today", tags: ["urgent"] },
-      { id: 4, title: "Review team docs", category: "Work", priority: "medium", dueDate: "Today" },
-      { id: 5, title: "Send client proposal", category: "Work", priority: "high", dueDate: "Today" },
-    ]
-  },
-  {
-    id: "doing",
-    title: "Doing",
-    color: "bg-marigold/10",
-    tasks: [
-      { id: 6, title: "Prepare presentation slides", category: "Work", priority: "high", tags: ["in-progress"] },
-    ]
-  },
-  {
-    id: "waiting",
-    title: "Waiting",
-    color: "bg-celeste/30",
-    tasks: [
-      { id: 7, title: "Client feedback on design", category: "Work", priority: "medium" },
-      { id: 8, title: "Approval from finance", category: "Work", priority: "medium", isOverdue: true, dueDate: "Yesterday" },
-    ]
-  },
-  {
-    id: "done",
-    title: "Done",
-    color: "bg-herb/10",
-    tasks: [
-      { id: 9, title: "Schedule team meeting", category: "Work", priority: "medium" },
-      { id: 10, title: "Submit expense report", category: "Work", priority: "low" },
-    ]
-  },
+const columns: Array<{ id: BoardColumn; title: string; color: string }> = [
+  { id: "inbox", title: "Backlog", color: "bg-muted" },
+  { id: "today", title: "Today", color: "bg-primary/10" },
+  { id: "doing", title: "Doing", color: "bg-secondary" },
+  { id: "waiting", title: "Waiting", color: "bg-accent" },
+  { id: "done", title: "Done", color: "bg-muted/80" },
 ]
 
 const priorityColors = {
   high: "bg-destructive/10 text-destructive border-destructive/20",
-  medium: "bg-marigold/10 text-marigold border-marigold/20",
+  medium: "bg-orange-500/10 text-orange-600 border-orange-200 dark:text-orange-300 dark:border-orange-400/30",
   low: "bg-muted text-muted-foreground border-border",
 }
 
-export default function KanbanPage() {
-  const [columns, setColumns] = useState(initialColumns)
-  const [compactView, setCompactView] = useState(false)
+type DragStartState = {
+  taskId: string
+  columnId: BoardColumn
+  pointerId: number
+  startX: number
+  startY: number
+  offsetX: number
+  offsetY: number
+  width: number
+  height: number
+}
+
+type ActiveDragState = {
+  taskId: string
+  columnId: BoardColumn
+  pointerId: number
+  x: number
+  y: number
+  offsetX: number
+  offsetY: number
+  width: number
+  height: number
+}
+
+function getColumnAtPoint(x: number, y: number) {
+  const target = document.elementFromPoint(x, y)
+  const column = target?.closest<HTMLElement>("[data-kanban-column-id]")
+  const columnId = column?.dataset.kanbanColumnId
+  return columnId ? (columnId as BoardColumn) : null
+}
+
+function TaskCard({
+  task,
+  columnId,
+  compactView,
+  lists,
+  isDragging,
+  onDragStart,
+}: {
+  task: Task
+  columnId: BoardColumn
+  compactView: boolean
+  lists: TaskList[]
+  isDragging?: boolean
+  onDragStart?: (event: ReactPointerEvent<HTMLDivElement>) => void
+}) {
+  const isOverdue = Boolean(task.dueDate && !task.completed && getDaysOverdue(task.dueDate) > 0)
 
   return (
-    <div className="px-4 lg:px-8 py-6 pb-24 lg:pb-6 h-full">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-3">
-            <LayoutGrid className="w-7 h-7" />
-            Kanban Board
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Drag and drop to organize your workflow
-          </p>
+    <div
+      data-slot="task-card"
+      onPointerDown={onDragStart}
+      className={cn(
+        "cursor-grab touch-none rounded-xl border border-border bg-background p-4 shadow-sm transition-all active:cursor-grabbing",
+        isOverdue && "border-destructive/30",
+        isDragging && "opacity-35 scale-[0.98]"
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium text-foreground text-sm leading-5">{task.title}</div>
+
+          {!compactView && (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className={`rounded-md border px-2 py-0.5 text-xs ${priorityColors[task.priority]}`}>
+                {task.priority}
+              </span>
+              <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">
+                {getTaskListName(lists, task.listId)}
+              </span>
+            </div>
+          )}
+
+          {!compactView && task.tags.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-1">
+              {task.tags.map((tag) => (
+                <span key={tag} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {task.dueDate && (
+            <div
+              className={cn(
+                "mt-3 flex items-center gap-1 text-xs",
+                isOverdue ? "text-destructive" : "text-muted-foreground"
+              )}
+            >
+              {isOverdue ? <AlertCircle className="h-3 w-3" /> : <Calendar className="h-3 w-3" />}
+              {formatTaskDateLabel(task.dueDate)}
+            </div>
+          )}
+
+          {columnId === "done" && (
+            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+              <CheckCircle2 className="h-3 w-3" />
+              Completed
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center gap-3">
-          <Button variant="outline" size="sm" className="border-border">
-            <Filter className="w-4 h-4 mr-2" />
-            Filter
-          </Button>
-          <Button variant="outline" size="sm" className="border-border">
-            <Tag className="w-4 h-4 mr-2" />
-            Labels
-          </Button>
-          <div className="flex items-center bg-muted rounded-lg p-1">
+      </div>
+    </div>
+  )
+}
+
+export default function KanbanPage() {
+  const { tasks, lists, moveTaskToColumn } = useTaskedState()
+  const [compactView, setCompactView] = useState(false)
+  const [addTaskOpen, setAddTaskOpen] = useState(false)
+  const [targetColumn, setTargetColumn] = useState<BoardColumn>("waiting")
+  const [activeDrag, setActiveDrag] = useState<ActiveDragState | null>(null)
+  const [hoverColumn, setHoverColumn] = useState<BoardColumn | null>(null)
+  const dragStartRef = useRef<DragStartState | null>(null)
+  const activeDragRef = useRef<ActiveDragState | null>(null)
+  const hoverColumnRef = useRef<BoardColumn | null>(null)
+
+  const tasksByColumn = useMemo(
+    () =>
+      columns.map((column) => ({
+        ...column,
+        tasks: tasks.filter((task) => task.boardColumn === column.id),
+      })),
+    [tasks]
+  )
+
+  const draggedTask = useMemo(
+    () => (activeDrag ? tasks.find((task) => task.id === activeDrag.taskId) ?? null : null),
+    [activeDrag, tasks]
+  )
+
+  useEffect(() => {
+    const cleanupStyles = () => {
+      document.body.style.userSelect = ""
+      document.body.style.cursor = ""
+    }
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const pendingDrag = dragStartRef.current
+
+      if (pendingDrag && event.pointerId !== pendingDrag.pointerId) {
+        return
+      }
+
+      if (!activeDragRef.current && pendingDrag) {
+        const movedX = event.clientX - pendingDrag.startX
+        const movedY = event.clientY - pendingDrag.startY
+
+        if (Math.hypot(movedX, movedY) < 8) {
+          return
+        }
+
+        document.body.style.userSelect = "none"
+        document.body.style.cursor = "grabbing"
+
+        const nextDrag = {
+          taskId: pendingDrag.taskId,
+          columnId: pendingDrag.columnId,
+          pointerId: pendingDrag.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          offsetX: pendingDrag.offsetX,
+          offsetY: pendingDrag.offsetY,
+          width: pendingDrag.width,
+          height: pendingDrag.height,
+        }
+        activeDragRef.current = nextDrag
+        setActiveDrag(nextDrag)
+        const nextHover = getColumnAtPoint(event.clientX, event.clientY) ?? pendingDrag.columnId
+        hoverColumnRef.current = nextHover
+        setHoverColumn(nextHover)
+        return
+      }
+
+      if (!activeDragRef.current || event.pointerId !== activeDragRef.current.pointerId) {
+        return
+      }
+
+      document.body.style.userSelect = "none"
+      document.body.style.cursor = "grabbing"
+
+      const nextDrag = {
+        ...activeDragRef.current,
+        x: event.clientX,
+        y: event.clientY,
+      }
+      activeDragRef.current = nextDrag
+      setActiveDrag(nextDrag)
+
+      const nextHover = getColumnAtPoint(event.clientX, event.clientY)
+      hoverColumnRef.current = nextHover
+      setHoverColumn(nextHover)
+    }
+
+    const finishDrag = (event: PointerEvent) => {
+      const pendingDrag = dragStartRef.current
+      const currentDrag = activeDragRef.current
+
+      if (pendingDrag && event.pointerId !== pendingDrag.pointerId) {
+        return
+      }
+
+      if (currentDrag && event.pointerId !== currentDrag.pointerId) {
+        return
+      }
+
+      const dropColumn =
+        getColumnAtPoint(event.clientX, event.clientY) ??
+        hoverColumnRef.current ??
+        currentDrag?.columnId ??
+        pendingDrag?.columnId
+
+      if (currentDrag && dropColumn && dropColumn !== currentDrag.columnId) {
+        moveTaskToColumn(currentDrag.taskId, dropColumn)
+      }
+
+      dragStartRef.current = null
+      activeDragRef.current = null
+      hoverColumnRef.current = null
+      setActiveDrag(null)
+      setHoverColumn(null)
+      cleanupStyles()
+    }
+
+    const cancelDrag = () => {
+      dragStartRef.current = null
+      activeDragRef.current = null
+      hoverColumnRef.current = null
+      setActiveDrag(null)
+      setHoverColumn(null)
+      cleanupStyles()
+    }
+
+    window.addEventListener("pointermove", handlePointerMove)
+    window.addEventListener("pointerup", finishDrag)
+    window.addEventListener("pointercancel", cancelDrag)
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove)
+      window.removeEventListener("pointerup", finishDrag)
+      window.removeEventListener("pointercancel", cancelDrag)
+      cleanupStyles()
+    }
+  }, [moveTaskToColumn])
+
+  return (
+    <div className="h-full px-4 py-6 pb-24 lg:px-8 lg:pb-6">
+      <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+        <div>
+          <h1 className="flex items-center gap-3 text-2xl font-semibold text-foreground">
+            <LayoutGrid className="h-7 w-7" />
+            Kanban Board
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">Drag tasks between columns to update the flow.</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center rounded-lg bg-muted p-1">
             <button
               onClick={() => setCompactView(false)}
-              className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                !compactView 
-                  ? "bg-card text-foreground shadow-sm" 
-                  : "text-muted-foreground"
-              }`}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                !compactView ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+              )}
             >
               Expanded
             </button>
             <button
               onClick={() => setCompactView(true)}
-              className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
-                compactView 
-                  ? "bg-card text-foreground shadow-sm" 
-                  : "text-muted-foreground"
-              }`}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                compactView ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
+              )}
             >
               Compact
             </button>
@@ -138,124 +318,136 @@ export default function KanbanPage() {
         </div>
       </div>
 
-      {/* Kanban Board */}
-      <div className="flex gap-4 overflow-x-auto pb-4">
-        {columns.map(column => (
-          <div
-            key={column.id}
-            className="flex-shrink-0 w-72 md:w-80"
-          >
-            {/* Column Header */}
-            <div className={`${column.color} rounded-t-xl px-4 py-3 border border-b-0 border-border`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-foreground">{column.title}</h3>
-                  <span className="px-2 py-0.5 bg-background/50 rounded-full text-xs text-muted-foreground">
-                    {column.tasks.length}
-                  </span>
-                </div>
-                <button className="p-1 text-muted-foreground hover:text-foreground rounded">
-                  <MoreHorizontal className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
+      <div className="-mx-4 overflow-x-auto px-4 pb-4 lg:mx-0 lg:px-0">
+        <div className="flex gap-4 snap-x snap-mandatory">
+          {tasksByColumn.map((column) => {
+            const isActiveDropZone = hoverColumn === column.id
 
-            {/* Column Content */}
-            <div className="bg-card border border-t-0 border-border rounded-b-xl p-3 min-h-[400px]">
-              <div className="space-y-3">
-                {column.tasks.map(task => (
-                  <div
-                    key={task.id}
-                    className={`bg-background rounded-lg border border-border p-4 cursor-grab hover:shadow-md transition-all group ${
-                      task.isOverdue ? 'border-destructive/30' : ''
-                    }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      <GripVertical className="w-4 h-4 text-muted-foreground mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <div className="flex-1 min-w-0">
-                        {/* Task Title */}
-                        <div className="font-medium text-foreground text-sm mb-2">
-                          {task.title}
-                        </div>
-
-                        {/* Task Meta */}
-                        {!compactView && (
-                          <div className="flex flex-wrap items-center gap-2 mb-3">
-                            <span className={`px-2 py-0.5 rounded text-xs border ${priorityColors[task.priority]}`}>
-                              {task.priority}
-                            </span>
-                            <span className="px-2 py-0.5 bg-celeste/30 rounded text-xs text-foreground">
-                              {task.category}
-                            </span>
-                          </div>
-                        )}
-
-                        {/* Tags */}
-                        {!compactView && task.tags && (
-                          <div className="flex flex-wrap gap-1 mb-3">
-                            {task.tags.map(tag => (
-                              <span 
-                                key={tag}
-                                className="px-2 py-0.5 bg-muted rounded-full text-xs text-muted-foreground"
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-
-                        {/* Due Date */}
-                        {task.dueDate && (
-                          <div className={`flex items-center gap-1 text-xs ${
-                            task.isOverdue ? 'text-destructive' : 'text-muted-foreground'
-                          }`}>
-                            {task.isOverdue ? (
-                              <AlertCircle className="w-3 h-3" />
-                            ) : (
-                              <Calendar className="w-3 h-3" />
-                            )}
-                            {task.dueDate}
-                          </div>
-                        )}
-
-                        {/* Done indicator */}
-                        {column.id === "done" && (
-                          <div className="flex items-center gap-1 text-xs text-herb mt-2">
-                            <CheckCircle2 className="w-3 h-3" />
-                            Completed
-                          </div>
-                        )}
-                      </div>
+            return (
+              <section
+                key={column.id}
+                data-kanban-column-id={column.id}
+                className="w-[84vw] max-w-sm flex-shrink-0 snap-start md:w-80"
+              >
+                <div
+                  className={cn(
+                    `${column.color} rounded-t-xl border border-b-0 border-border px-4 py-3 transition-all`,
+                    isActiveDropZone && "border-primary/50 shadow-sm"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <h3 className="font-semibold text-foreground">{column.title}</h3>
+                      <span className="rounded-full bg-background/60 px-2 py-0.5 text-xs text-muted-foreground">
+                        {column.tasks.length}
+                      </span>
                     </div>
+                    <button className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
                   </div>
-                ))}
+                  {isActiveDropZone && (
+                    <p className="mt-2 text-xs text-muted-foreground">Release to move here</p>
+                  )}
+                </div>
 
-                {/* Empty State */}
-                {column.tasks.length === 0 && (
-                  <div className="text-center py-8 text-muted-foreground text-sm">
-                    <p>No tasks</p>
-                    <p className="text-xs mt-1">Drag tasks here or add new</p>
+                <div
+                  className={cn(
+                    "min-h-[420px] rounded-b-xl border border-t-0 border-border bg-card p-3 transition-colors",
+                    isActiveDropZone && "border-primary/50 bg-accent/60"
+                  )}
+                >
+                  <div className="space-y-3">
+                    {column.tasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        columnId={column.id}
+                        compactView={compactView}
+                        lists={lists}
+                        isDragging={activeDrag?.taskId === task.id}
+                        onDragStart={(event: ReactPointerEvent<HTMLDivElement>) => {
+                          if (event.button !== 0) {
+                            return
+                          }
+
+                          const cardElement = event.currentTarget
+                          const rect = cardElement.getBoundingClientRect()
+
+                          if (!rect) {
+                            return
+                          }
+
+                          dragStartRef.current = {
+                            taskId: task.id,
+                            columnId: column.id,
+                            pointerId: event.pointerId,
+                            startX: event.clientX,
+                            startY: event.clientY,
+                            offsetX: event.clientX - rect.left,
+                            offsetY: event.clientY - rect.top,
+                            width: rect.width,
+                            height: rect.height,
+                          }
+
+                          cardElement.setPointerCapture(event.pointerId)
+                        }}
+                      />
+                    ))}
+
+                    {column.tasks.length === 0 && (
+                      <div
+                        className={cn(
+                          "rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground transition-colors",
+                          isActiveDropZone && "border-primary/50 bg-background"
+                        )}
+                      >
+                        <p>No tasks</p>
+                        <p className="mt-1 text-xs">Drag a card here or add a new one.</p>
+                      </div>
+                    )}
+
+                    <button
+                      className="w-full rounded-lg border-2 border-dashed border-border p-3 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
+                      onClick={() => {
+                        setTargetColumn(column.id)
+                        setAddTaskOpen(true)
+                      }}
+                    >
+                      Add Task
+                    </button>
                   </div>
-                )}
-
-                {/* Add Task Button */}
-                <button className="w-full p-3 border-2 border-dashed border-border rounded-lg text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors flex items-center justify-center gap-2 text-sm">
-                  <Plus className="w-4 h-4" />
-                  Add Task
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {/* Add Column */}
-        <div className="flex-shrink-0 w-72 md:w-80">
-          <button className="w-full h-32 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors flex items-center justify-center gap-2">
-            <Plus className="w-5 h-5" />
-            Add Column
-          </button>
+                </div>
+              </section>
+            )
+          })}
         </div>
       </div>
+
+      {activeDrag && draggedTask ? (
+        <div
+          className="pointer-events-none fixed left-0 top-0 z-50"
+          style={{
+            transform: `translate(${activeDrag.x - activeDrag.offsetX}px, ${activeDrag.y - activeDrag.offsetY}px) rotate(1deg)`,
+            width: activeDrag.width,
+          }}
+        >
+          <TaskCard
+            task={draggedTask}
+            columnId={activeDrag.columnId}
+            compactView={compactView}
+            lists={lists}
+          />
+        </div>
+      ) : null}
+
+      <AddTaskDialog
+        open={addTaskOpen}
+        onOpenChange={setAddTaskOpen}
+        defaultBoardColumn={targetColumn}
+        title={`Add task to ${columns.find((column) => column.id === targetColumn)?.title ?? "board"}`}
+        description="Create a task directly in this workflow stage."
+      />
     </div>
   )
 }

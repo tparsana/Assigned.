@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation"
 
-import { AppShell } from "@/components/app-shell"
 import { createClient } from "@/lib/supabase/server"
 
-export default async function AppLayout({ children }: { children: React.ReactNode }) {
+export default async function OnboardingLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -13,5 +12,5 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     redirect("/auth/signin")
   }
 
-  return <AppShell>{children}</AppShell>
+  return children
 }

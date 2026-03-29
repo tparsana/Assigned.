@@ -1,23 +1,38 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useMemo, useState } from "react"
+import { ArrowLeft, Mail } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Mail } from "lucide-react"
+import { createClient } from "@/lib/supabase/client"
 
 export default function ForgotPasswordPage() {
+  const supabase = useMemo(() => createClient(), [])
   const [isLoading, setIsLoading] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [email, setEmail] = useState("")
+  const [error, setError] = useState("")
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setError("")
     setIsLoading(true)
-    setTimeout(() => {
-      setIsLoading(false)
-      setIsSubmitted(true)
-    }, 1500)
+
+    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/confirm?next=/auth/update-password`,
+    })
+
+    setIsLoading(false)
+
+    if (resetError) {
+      setError(resetError.message)
+      return
+    }
+
+    setIsSubmitted(true)
   }
 
   return (
@@ -31,8 +46,8 @@ export default function ForgotPasswordPage() {
 
         {!isSubmitted ? (
           <>
-            <Link 
-              href="/auth/signin" 
+            <Link
+              href="/auth/signin"
               className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-8"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -51,13 +66,17 @@ export default function ForgotPasswordPage() {
                   id="email"
                   type="email"
                   placeholder="you@example.com"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                   required
                   className="h-12 bg-card border-border focus:border-primary"
                 />
               </div>
 
-              <Button 
-                type="submit" 
+              {error && <p className="text-sm text-destructive">{error}</p>}
+
+              <Button
+                type="submit"
                 className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg"
                 disabled={isLoading}
               >
@@ -75,7 +94,7 @@ export default function ForgotPasswordPage() {
               We&apos;ve sent password reset instructions to your email address.
             </p>
             <Link href="/auth/signin">
-              <Button 
+              <Button
                 variant="outline"
                 className="w-full h-12 border-border hover:bg-muted rounded-lg"
               >
