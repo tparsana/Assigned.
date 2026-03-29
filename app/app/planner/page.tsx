@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react"
 
+import { addDays, format, isToday } from "date-fns"
+
 import { AddTaskDialog } from "@/components/add-task-dialog"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,6 +13,7 @@ import {
   CheckCircle2,
   Circle,
   Plus,
+  ChevronLeft,
   ChevronRight,
   Clock,
   Star,
@@ -19,10 +22,10 @@ import {
   RefreshCw,
 } from "lucide-react"
 import {
+  formatLongDateLabel,
   getTasksForDate,
   getTaskListName,
   useTaskedState,
-  type PlanningMethod,
   type Task,
 } from "@/lib/tasked-store"
 
@@ -31,7 +34,7 @@ type PlannerMode = "top3" | "ivylee" | "hybrid"
 function sortPlannerTasks(tasks: Task[]) {
   return [...tasks].sort((left, right) => {
     if (left.completed === right.completed) {
-      const priorityRank = { high: 0, medium: 1, low: 2 }
+      const priorityRank = { high: 0, medium: 1, low: 2, none: 3 }
       const priorityDifference = priorityRank[left.priority] - priorityRank[right.priority]
 
       if (priorityDifference !== 0) {
@@ -49,7 +52,6 @@ export default function PlannerPage() {
   const {
     tasks,
     lists,
-    todayKey,
     toggleTask,
     moveTaskToColumn,
     moveUnfinishedTodayToTomorrow,
@@ -64,11 +66,14 @@ export default function PlannerPage() {
         ? "hybrid"
         : "top3") as PlannerMode
   )
+  const [currentDate, setCurrentDate] = useState(new Date())
   const [addTaskOpen, setAddTaskOpen] = useState(false)
+  const currentDateKey = format(currentDate, "yyyy-MM-dd")
+  const viewingToday = isToday(currentDate)
 
   const todayTasks = useMemo(
-    () => sortPlannerTasks(getTasksForDate(tasks, todayKey)),
-    [tasks, todayKey]
+    () => sortPlannerTasks(getTasksForDate(tasks, currentDateKey)),
+    [currentDateKey, tasks]
   )
   const top3Tasks = todayTasks.slice(0, 3)
   const otherTasks = todayTasks.slice(3)
@@ -81,7 +86,7 @@ export default function PlannerPage() {
     tasks.find(
       (task) =>
         !task.completed &&
-        task.plannedDate !== todayKey &&
+        task.plannedDate !== currentDateKey &&
         ["personal", "home"].includes(task.listId)
     ) ?? null
 
@@ -90,52 +95,69 @@ export default function PlannerPage() {
 
   return (
     <div className="px-4 lg:px-8 py-6 pb-24 lg:pb-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">Daily Planner</h1>
-          <p className="text-muted-foreground mt-1">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
-        </div>
+      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <h1 className="text-2xl font-semibold text-foreground">Daily Planner</h1>
 
-        <div className="flex items-center bg-muted rounded-lg p-1 overflow-x-auto">
-          <button
-            onClick={() => setMode("top3")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              mode === "top3"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Target className="w-4 h-4" />
-            Top 3
-          </button>
-          <button
-            onClick={() => setMode("ivylee")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              mode === "ivylee"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <ListOrdered className="w-4 h-4" />
-            Ivy Lee
-          </button>
-          <button
-            onClick={() => setMode("hybrid")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              mode === "hybrid"
-                ? "bg-card text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Shuffle className="w-4 h-4" />
-            Hybrid
-          </button>
+        <div className="flex flex-col gap-4 xl:ml-auto xl:flex-row xl:items-center xl:gap-4">
+          <div className="flex items-center gap-2 xl:justify-end">
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border"
+              onClick={() => setCurrentDate((date) => addDays(date, -1))}
+              aria-label="Previous day"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <div className="min-w-[220px] rounded-lg border border-border bg-card px-4 py-2 text-center">
+              <span className="font-medium text-foreground">{formatLongDateLabel(currentDateKey)}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border"
+              onClick={() => setCurrentDate((date) => addDays(date, 1))}
+              aria-label="Next day"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+
+          <div className="flex items-center rounded-lg bg-muted p-1 overflow-x-auto">
+            <button
+              onClick={() => setMode("top3")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                mode === "top3"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Target className="w-4 h-4" />
+              Top 3
+            </button>
+            <button
+              onClick={() => setMode("ivylee")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                mode === "ivylee"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <ListOrdered className="w-4 h-4" />
+              Ivy Lee
+            </button>
+            <button
+              onClick={() => setMode("hybrid")}
+              className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                mode === "hybrid"
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Shuffle className="w-4 h-4" />
+              Hybrid
+            </button>
+          </div>
         </div>
       </div>
 
@@ -166,7 +188,7 @@ export default function PlannerPage() {
               <div className="space-y-3">
                 {top3Tasks.length === 0 ? (
                   <div className="p-4 rounded-lg bg-background text-sm text-muted-foreground">
-                    No tasks are planned for today yet.
+                    No tasks are planned for this day yet.
                   </div>
                 ) : (
                   top3Tasks.map((task, index) => (
@@ -370,24 +392,39 @@ export default function PlannerPage() {
               <Sparkles className="w-5 h-5 text-marigold" />
               <h3 className="font-semibold text-foreground">AI Suggestions</h3>
             </div>
-            <div className="space-y-3 text-sm text-muted-foreground">
-              <p>Your highest priority work is already in today&apos;s plan. Try tackling it before noon.</p>
+              <div className="space-y-3 text-sm text-muted-foreground">
+              <p>Your highest priority work is already in this plan. Try tackling it before noon.</p>
               <p>Tasks with smaller estimates can wait until after your main block is done.</p>
+              </div>
             </div>
-          </div>
 
           <div className="bg-card rounded-xl border border-border p-6">
             <h3 className="font-semibold text-foreground mb-4">End of Day</h3>
             <div className="space-y-3">
-              <Button variant="outline" className="w-full justify-start border-border" onClick={moveUnfinishedTodayToTomorrow}>
+              <Button
+                variant="outline"
+                className="w-full justify-start border-border"
+                onClick={moveUnfinishedTodayToTomorrow}
+                disabled={!viewingToday}
+              >
                 <RefreshCw className="w-4 h-4 mr-2" />
                 Move unfinished to tomorrow
               </Button>
-              <Button variant="outline" className="w-full justify-start border-border" onClick={startTomorrowPlan}>
+              <Button
+                variant="outline"
+                className="w-full justify-start border-border"
+                onClick={startTomorrowPlan}
+                disabled={!viewingToday}
+              >
                 <ArrowRight className="w-4 h-4 mr-2" />
                 Start tomorrow&apos;s plan
               </Button>
             </div>
+            {!viewingToday && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                End-of-day actions are available only while viewing today.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -395,9 +432,9 @@ export default function PlannerPage() {
       <AddTaskDialog
         open={addTaskOpen}
         onOpenChange={setAddTaskOpen}
-        defaultPlannedDate={todayKey}
+        defaultPlannedDate={currentDateKey}
         title="Add planner task"
-        description="Add a task directly into today’s plan."
+        description={`Add a task directly into ${viewingToday ? "today's" : formatLongDateLabel(currentDateKey)} plan.`}
       />
     </div>
   )

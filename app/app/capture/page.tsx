@@ -142,7 +142,7 @@ export default function CapturePage() {
           dueDate: task.suggestedDate,
           boardColumn: task.suggestedDate === todayKey ? "today" : "waiting",
           source: "image",
-          priority: "medium",
+          priority: "none",
         })
       })
 

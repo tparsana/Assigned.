@@ -14,7 +14,11 @@ import {
 } from "lucide-react"
 import {
   formatTaskDateLabel,
+  getCompletedTaskAccentClass,
+  getCompletedTaskAccentStyle,
   getDaysOverdue,
+  getTaskPriorityBadgeClass,
+  getTaskPriorityBadgeStyle,
   getTaskListName,
   useTaskedState,
   type BoardColumn,
@@ -29,12 +33,6 @@ const columns: Array<{ id: BoardColumn; title: string; color: string }> = [
   { id: "waiting", title: "Waiting", color: "bg-accent" },
   { id: "done", title: "Done", color: "bg-muted/80" },
 ]
-
-const priorityColors = {
-  high: "bg-destructive/10 text-destructive border-destructive/20",
-  medium: "bg-orange-500/10 text-orange-600 border-orange-200 dark:text-orange-300 dark:border-orange-400/30",
-  low: "bg-muted text-muted-foreground border-border",
-}
 
 type DragStartState = {
   taskId: string
@@ -100,9 +98,14 @@ function TaskCard({
 
           {!compactView && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className={`rounded-md border px-2 py-0.5 text-xs ${priorityColors[task.priority]}`}>
-                {task.priority}
-              </span>
+              {task.priority !== "none" ? (
+                <span
+                  className={`rounded-md px-2 py-0.5 text-xs ${getTaskPriorityBadgeClass(task.priority)}`}
+                  style={getTaskPriorityBadgeStyle(task.priority)}
+                >
+                  {task.priority}
+                </span>
+              ) : null}
               <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-foreground">
                 {getTaskListName(lists, task.listId)}
               </span>
@@ -132,7 +135,10 @@ function TaskCard({
           )}
 
           {columnId === "done" && (
-            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+            <div
+              className={`mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs ${getCompletedTaskAccentClass()}`}
+              style={getCompletedTaskAccentStyle()}
+            >
               <CheckCircle2 className="h-3 w-3" />
               Completed
             </div>

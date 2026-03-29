@@ -5,22 +5,12 @@ import { useEffect, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import {
   ListTodo,
   Calendar,
   Sparkles,
-  Plus,
   ChevronRight,
   CheckCircle2,
   Clock,
-  Camera,
 } from "lucide-react"
 import {
   formatTimeLabel,
@@ -70,15 +60,10 @@ export function DashboardHome() {
     tasks,
     scheduleBlocks,
     ai,
-    lists,
     todayKey,
     toggleTask,
-    addTask,
   } = useTaskedState()
 
-  const [addTaskOpen, setAddTaskOpen] = useState(false)
-  const [addTaskMode, setAddTaskMode] = useState<"options" | "manual">("options")
-  const [manualTaskTitle, setManualTaskTitle] = useState("")
   const [aiInsight, setAiInsight] = useState(
     "Your mornings are strongest. Try clearing your hardest task before noon."
   )
@@ -163,30 +148,6 @@ export function DashboardHome() {
       active = false
     }
   }, [ai.weeklyInsights, fallbackInsight, insightPayload, todayKey, todaySchedule.length, todayTasks.length])
-
-  const closeAddTask = () => {
-    setAddTaskOpen(false)
-    setAddTaskMode("options")
-    setManualTaskTitle("")
-  }
-
-  const handleManualTaskAdd = () => {
-    const title = manualTaskTitle.trim()
-    if (!title) {
-      return
-    }
-
-    addTask({
-      title,
-      plannedDate: todayKey,
-      dueDate: todayKey,
-      boardColumn: "today",
-      priority: "medium",
-      listId: lists[0]?.id ?? "",
-      estimatedMinutes: 30,
-    })
-    closeAddTask()
-  }
 
   const scheduleTone = (type: string) => {
     if (type === "focus") return "bg-celeste/20"
@@ -311,25 +272,6 @@ export function DashboardHome() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-card rounded-xl border border-border p-6">
-            <div className="flex items-center gap-2 mb-3">
-              <Plus className="w-5 h-5 text-primary" />
-              <h2 className="font-semibold text-foreground">Add Task</h2>
-            </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              Add a task manually or capture a photo to turn notes into action.
-            </p>
-            <Button
-              onClick={() => {
-                setAddTaskOpen(true)
-                setAddTaskMode("options")
-              }}
-              className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              Add Task
-            </Button>
-          </div>
-
           <div className="bg-primary/5 rounded-xl border border-primary/10 p-5">
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="w-5 h-5 text-marigold" />
@@ -365,100 +307,6 @@ export function DashboardHome() {
           </div>
         </div>
       </div>
-
-      <Dialog
-        open={addTaskOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeAddTask()
-            return
-          }
-
-          setAddTaskOpen(true)
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          {addTaskMode === "options" ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Add a task</DialogTitle>
-                <DialogDescription>
-                  Choose how you want to bring something into today.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="grid gap-3">
-                <button
-                  onClick={() => setAddTaskMode("manual")}
-                  className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <Plus className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-medium text-foreground">Manual add</div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Type a task directly into today&apos;s list.
-                    </p>
-                  </div>
-                </button>
-
-                <Link
-                  href="/app/capture"
-                  onClick={closeAddTask}
-                  className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                    <Camera className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="font-medium text-foreground">Capture photo</div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Snap a page and review extracted tasks before adding them.
-                    </p>
-                  </div>
-                </Link>
-              </div>
-            </>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle>Manual add</DialogTitle>
-                <DialogDescription>
-                  Add a task directly to today&apos;s task list.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="space-y-4">
-                <Input
-                  autoFocus
-                  value={manualTaskTitle}
-                  onChange={(event) => setManualTaskTitle(event.target.value)}
-                  placeholder="What needs to be done today?"
-                />
-
-                <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <Button variant="ghost" onClick={() => setAddTaskMode("options")}>
-                    Back
-                  </Button>
-                  <div className="flex items-center justify-end gap-3">
-                    <Button variant="ghost" onClick={closeAddTask}>
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleManualTaskAdd}
-                      disabled={!manualTaskTitle.trim()}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90"
-                    >
-                      Add Task
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

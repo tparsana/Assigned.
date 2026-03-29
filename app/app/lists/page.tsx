@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 
 import { AddTaskDialog } from "@/components/add-task-dialog"
+import { TaskEditorDialog } from "@/components/task-editor-dialog"
 import { Button } from "@/components/ui/button"
 import {
   FolderOpen,
@@ -16,6 +17,8 @@ import {
   ChevronRight,
   MoreHorizontal,
   CheckCircle2,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 import {
   Dialog,
@@ -26,7 +29,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { getTaskListStats, useTaskedState, type ListIcon } from "@/lib/tasked-store"
+import {
+  formatTaskDueChipLabel,
+  getTaskListStats,
+  getTaskPriorityBadgeClass,
+  getTaskPriorityBadgeStyle,
+  useTaskedState,
+  type ListIcon,
+  type Task,
+} from "@/lib/tasked-store"
 
 const listIconMap: Record<ListIcon, typeof Briefcase> = {
   briefcase: Briefcase,
@@ -39,11 +50,12 @@ const listIconMap: Record<ListIcon, typeof Briefcase> = {
 }
 
 export default function ListsPage() {
-  const { lists, tasks, toggleTask, addList } = useTaskedState()
+  const { lists, tasks, toggleTask, addList, deleteTask } = useTaskedState()
   const [selectedList, setSelectedList] = useState<string | null>(null)
   const [addTaskOpen, setAddTaskOpen] = useState(false)
   const [newListOpen, setNewListOpen] = useState(false)
   const [newListName, setNewListName] = useState("")
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
 
   const listStats = useMemo(() => getTaskListStats(tasks, lists), [lists, tasks])
   const selectedListData = listStats.find((list) => list.id === selectedList) ?? null
@@ -58,6 +70,14 @@ export default function ListsPage() {
     setSelectedList(createdId)
     setNewListName("")
     setNewListOpen(false)
+  }
+
+  const handleDeleteTask = (task: Task) => {
+    if (!window.confirm(`Delete "${task.title}"?`)) {
+      return
+    }
+
+    deleteTask(task.id)
   }
 
   return (
@@ -170,7 +190,7 @@ export default function ListsPage() {
                     selectedListData.tasks.map((task) => (
                       <div
                         key={task.id}
-                        className={`flex items-center gap-4 p-4 rounded-lg transition-colors ${
+                        className={`group flex items-center gap-4 p-4 rounded-lg transition-colors ${
                           task.completed ? "bg-herb/5" : "bg-background hover:bg-muted/50"
                         }`}
                       >
@@ -188,21 +208,75 @@ export default function ListsPage() {
                           <div className={`font-medium ${task.completed ? "line-through text-muted-foreground" : "text-foreground"}`}>
                             {task.title}
                           </div>
-                          {task.dueDate && (
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              Due: {task.dueDate}
-                            </div>
-                          )}
                         </div>
-                        <span className={`px-2 py-0.5 rounded text-xs ${
-                          task.priority === "high"
-                            ? "bg-destructive/10 text-destructive"
-                            : task.priority === "medium"
-                              ? "bg-marigold/10 text-marigold"
-                              : "bg-muted text-muted-foreground"
-                        }`}>
-                          {task.priority}
-                        </span>
+                        <div className="ml-auto flex items-center gap-2 lg:hidden">
+                          {task.priority !== "none" ? (
+                            <span
+                              className={`rounded px-2 py-0.5 text-xs ${getTaskPriorityBadgeClass(task.priority)}`}
+                              style={getTaskPriorityBadgeStyle(task.priority)}
+                            >
+                              {task.priority}
+                            </span>
+                          ) : null}
+                          {task.dueDate || task.plannedDate ? (
+                            <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                              {formatTaskDueChipLabel(task.dueDate ?? task.plannedDate)}
+                            </span>
+                          ) : null}
+                          <button
+                            type="button"
+                            aria-label={`Edit ${task.title}`}
+                            className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                            onClick={() => setEditingTask(task)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label={`Delete ${task.title}`}
+                            className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-destructive"
+                            onClick={() => handleDeleteTask(task)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                        <div className="relative ml-auto hidden min-w-[10rem] lg:block">
+                          <div className="flex items-center justify-end gap-2 transition-transform duration-200 ease-out group-hover:-translate-x-[4.5rem]">
+                            {task.priority !== "none" ? (
+                              <span
+                                className={`rounded px-2 py-0.5 text-xs ${getTaskPriorityBadgeClass(task.priority)}`}
+                                style={getTaskPriorityBadgeStyle(task.priority)}
+                              >
+                                {task.priority}
+                              </span>
+                            ) : null}
+                            {task.dueDate || task.plannedDate ? (
+                              <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                                {formatTaskDueChipLabel(task.dueDate ?? task.plannedDate)}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="pointer-events-none absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-all duration-200 ease-out group-hover:pointer-events-auto group-hover:opacity-100">
+                            <button
+                              type="button"
+                              aria-label={`Edit ${task.title}`}
+                              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                              onClick={() => setEditingTask(task)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              aria-label={`Delete ${task.title}`}
+                              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-destructive"
+                              onClick={() => handleDeleteTask(task)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     ))
                   )}
@@ -219,6 +293,16 @@ export default function ListsPage() {
         defaultListId={selectedListData?.id}
         title={selectedListData ? `Add task to ${selectedListData.name}` : "Add task"}
         description="Create a task directly inside this list."
+      />
+
+      <TaskEditorDialog
+        task={editingTask}
+        open={Boolean(editingTask)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingTask(null)
+          }
+        }}
       />
 
       <Dialog open={newListOpen} onOpenChange={setNewListOpen}>

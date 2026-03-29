@@ -34,7 +34,7 @@ import {
 } from "lucide-react"
 
 const sidebarItems = [
-  { href: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/app", label: "Today", icon: LayoutDashboard },
   { href: "/app/planner", label: "Daily Planner", icon: CalendarDays },
   { href: "/app/calendar", label: "Calendar", icon: Calendar },
   { href: "/app/kanban", label: "Kanban", icon: LayoutGrid },
@@ -301,7 +301,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border px-2 py-2 z-40">
           <div className="flex items-center justify-around">
             {[
-              { href: "/app", icon: LayoutDashboard, label: "Home" },
+              { href: "/app", icon: LayoutDashboard, label: "Today" },
               { href: "/app/planner", icon: CalendarDays, label: "Plan" },
               { href: "/app/lists", icon: FolderOpen, label: "Lists" },
               { href: "/app/kanban", icon: LayoutGrid, label: "Board" },

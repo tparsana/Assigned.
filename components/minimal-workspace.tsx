@@ -1,9 +1,10 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { CheckCircle2, FolderOpen, Plus } from "lucide-react"
+import { CheckCircle2, FolderOpen, Pencil, Plus, Trash2 } from "lucide-react"
 
 import { AddTaskDialog } from "@/components/add-task-dialog"
+import { TaskEditorDialog } from "@/components/task-editor-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -14,16 +15,23 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { formatTaskDateLabel, useTaskedState } from "@/lib/tasked-store"
+import {
+  formatTaskDueChipLabel,
+  getTaskPriorityBadgeClass,
+  getTaskPriorityBadgeStyle,
+  useTaskedState,
+  type Task,
+} from "@/lib/tasked-store"
 
 type TaskFilter = "all" | "unassigned" | string
 
 export function MinimalWorkspace() {
-  const { tasks, lists, toggleTask, addList } = useTaskedState()
+  const { tasks, lists, toggleTask, addList, deleteTask } = useTaskedState()
   const [addTaskOpen, setAddTaskOpen] = useState(false)
   const [newListOpen, setNewListOpen] = useState(false)
   const [newListName, setNewListName] = useState("")
   const [selectedFilter, setSelectedFilter] = useState<TaskFilter>("all")
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
 
   const sortedTasks = useMemo(() => {
     return [...tasks].sort((left, right) => {
@@ -66,6 +74,14 @@ export function MinimalWorkspace() {
     setSelectedFilter(createdId)
     setNewListName("")
     setNewListOpen(false)
+  }
+
+  const handleDeleteTask = (task: Task) => {
+    if (!window.confirm(`Delete "${task.title}"?`)) {
+      return
+    }
+
+    deleteTask(task.id)
   }
 
   return (
@@ -154,14 +170,18 @@ export function MinimalWorkspace() {
           ) : (
             <div className="divide-y divide-border">
               {filteredTasks.map((task) => {
-                const list = lists.find((value) => value.id === task.listId)
-                const dateLabel = formatTaskDateLabel(task.plannedDate ?? task.dueDate)
+                const dateLabel = formatTaskDueChipLabel(task.dueDate ?? task.plannedDate)
 
                 return (
-                  <div key={task.id} className="flex items-start gap-3 px-4 py-4 sm:gap-4 sm:px-5 sm:py-5">
+                  <div
+                    key={task.id}
+                    className={`group flex items-center gap-4 p-4 transition-colors ${
+                      task.completed ? "bg-herb/5" : "bg-background hover:bg-muted/50"
+                    }`}
+                  >
                     <button
                       onClick={() => toggleTask(task.id)}
-                      className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
+                      className={`flex h-6 w-6 items-center justify-center rounded-full border-2 transition-colors ${
                         task.completed
                           ? "border-herb bg-herb"
                           : "border-border hover:border-primary"
@@ -170,28 +190,78 @@ export function MinimalWorkspace() {
                       {task.completed && <CheckCircle2 className="h-4 w-4 text-herb-foreground" />}
                     </button>
 
-                    <div className="min-w-0 flex-1">
+                    <div className="flex-1">
                       <div className={`font-medium ${task.completed ? "text-muted-foreground line-through" : "text-foreground"}`}>
                         {task.title}
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        <span className="rounded-full bg-muted px-2 py-1">
-                          {list?.name ?? "No list"}
-                        </span>
-                        {(task.plannedDate || task.dueDate) && (
-                          <span className="rounded-full bg-muted px-2 py-1">{dateLabel}</span>
-                        )}
+                    </div>
+
+                    <div className="ml-auto flex items-center gap-2 lg:hidden">
+                      {task.priority !== "none" ? (
                         <span
-                          className={`rounded-full px-2 py-1 ${
-                            task.priority === "high"
-                              ? "bg-destructive/10 text-destructive"
-                              : task.priority === "medium"
-                                ? "bg-marigold/10 text-marigold"
-                                : "bg-muted text-muted-foreground"
-                          }`}
+                          className={`rounded px-2 py-0.5 text-xs ${getTaskPriorityBadgeClass(task.priority)}`}
+                          style={getTaskPriorityBadgeStyle(task.priority)}
                         >
                           {task.priority}
                         </span>
+                      ) : null}
+                      {dateLabel ? (
+                        <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                          {dateLabel}
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        aria-label={`Edit ${task.title}`}
+                        className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                        onClick={() => setEditingTask(task)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${task.title}`}
+                        className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-destructive"
+                        onClick={() => handleDeleteTask(task)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    <div className="relative ml-auto hidden min-w-[10rem] lg:block">
+                      <div className="flex items-center justify-end gap-2 transition-transform duration-200 ease-out group-hover:-translate-x-[4.5rem]">
+                        {task.priority !== "none" ? (
+                          <span
+                            className={`rounded px-2 py-0.5 text-xs ${getTaskPriorityBadgeClass(task.priority)}`}
+                            style={getTaskPriorityBadgeStyle(task.priority)}
+                          >
+                            {task.priority}
+                          </span>
+                        ) : null}
+                        {dateLabel ? (
+                          <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                            {dateLabel}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      <div className="pointer-events-none absolute right-0 top-1/2 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-all duration-200 ease-out group-hover:pointer-events-auto group-hover:opacity-100">
+                        <button
+                          type="button"
+                          aria-label={`Edit ${task.title}`}
+                          className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
+                          onClick={() => setEditingTask(task)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${task.title}`}
+                          className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-card hover:text-destructive"
+                          onClick={() => handleDeleteTask(task)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -208,6 +278,16 @@ export function MinimalWorkspace() {
         defaultListId={selectedFilter === "all" || selectedFilter === "unassigned" ? undefined : selectedFilter}
         title="Add task"
         description="Keep this workspace simple: capture the next thing and move on."
+      />
+
+      <TaskEditorDialog
+        task={editingTask}
+        open={Boolean(editingTask)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingTask(null)
+          }
+        }}
       />
 
       <Dialog open={newListOpen} onOpenChange={setNewListOpen}>

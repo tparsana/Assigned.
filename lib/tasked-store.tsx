@@ -27,7 +27,7 @@ import type { User } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/client"
 
 export type TaskSource = "manual" | "image" | "voice" | "imported"
-export type TaskPriority = "high" | "medium" | "low"
+export type TaskPriority = "none" | "high" | "medium" | "low"
 export type BoardColumn = "inbox" | "today" | "doing" | "waiting" | "done"
 export type PlanningMethod = "top3" | "ivylee" | "hybrid" | "time-blocking" | "kanban"
 export type InboxItemStatus = "pending" | "approved" | "discarded"
@@ -57,6 +57,7 @@ export interface Task {
   dueDate: string | null
   plannedDate: string | null
   estimatedMinutes: number | null
+  note?: string
   boardColumn: BoardColumn
   source: TaskSource
   tags: string[]
@@ -158,6 +159,7 @@ type AddTaskInput = {
   dueDate?: string | null
   plannedDate?: string | null
   estimatedMinutes?: number | null
+  note?: string
   boardColumn?: BoardColumn
   source?: TaskSource
   tags?: string[]
@@ -274,6 +276,54 @@ export function formatTaskDateLabel(value: string | null | undefined) {
   if (isTomorrow(parsed)) return "Tomorrow"
   if (isYesterday(parsed)) return "Yesterday"
   return format(parsed, "EEE, MMM d")
+}
+
+export function formatTaskDueChipLabel(value: string | null | undefined) {
+  if (!value) {
+    return ""
+  }
+
+  const parsed = parseISO(value)
+  if (isToday(parsed)) return "Today"
+  if (isTomorrow(parsed)) return "Tomorrow"
+  if (isYesterday(parsed)) return "Yesterday"
+  return format(parsed, "d MMM")
+}
+
+export function getTaskPriorityBadgeClass(priority: TaskPriority) {
+  switch (priority) {
+    case "none":
+      return ""
+    case "high":
+      return "border bg-transparent"
+    case "medium":
+      return "border bg-transparent"
+    case "low":
+      return "border bg-transparent"
+    default:
+      return "border bg-transparent"
+  }
+}
+
+export function getCompletedTaskAccentClass() {
+  return "border bg-transparent"
+}
+
+export function getTaskPriorityBadgeStyle(priority: TaskPriority) {
+  switch (priority) {
+    case "high":
+      return { color: "#dc2626", borderColor: "#dc2626" }
+    case "medium":
+      return { color: "#ca8a04", borderColor: "#ca8a04" }
+    case "low":
+      return { color: "#16a34a", borderColor: "#16a34a" }
+    default:
+      return undefined
+  }
+}
+
+export function getCompletedTaskAccentStyle() {
+  return { color: "#16a34a", borderColor: "#16a34a" }
 }
 
 export function formatLongDateLabel(value: string) {
@@ -711,10 +761,11 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
           title: input.title.trim(),
           completed: false,
           listId: getDefaultListId(current.lists, input.listId),
-          priority: input.priority ?? "medium",
+          priority: input.priority ?? "none",
           dueDate: input.dueDate ?? null,
           plannedDate: input.plannedDate ?? null,
           estimatedMinutes: input.estimatedMinutes ?? null,
+          note: input.note?.trim() ? input.note.trim() : "",
           boardColumn: input.boardColumn ?? (input.plannedDate === dateKey(new Date()) ? "today" : "waiting"),
           source: input.source ?? "manual",
           tags: input.tags ?? [],

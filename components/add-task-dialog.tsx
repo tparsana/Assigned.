@@ -42,7 +42,7 @@ export function AddTaskDialog({
   const [mode, setMode] = useState<"options" | "manual">(showCaptureOption ? "options" : "manual")
   const [taskTitle, setTaskTitle] = useState("")
   const [listId, setListId] = useState(fallbackListId)
-  const [priority, setPriority] = useState<TaskPriority>("medium")
+  const [priority, setPriority] = useState<TaskPriority>("none")
   const [plannedDate, setPlannedDate] = useState(defaultPlannedDate ?? todayKey)
   const [estimatedMinutes, setEstimatedMinutes] = useState("30")
 
@@ -53,7 +53,7 @@ export function AddTaskDialog({
 
     setTaskTitle("")
     setListId(defaultListId ?? lists[0]?.id ?? "")
-    setPriority("medium")
+    setPriority("none")
     setPlannedDate(defaultPlannedDate ?? todayKey)
     setEstimatedMinutes("30")
     setMode(showCaptureOption ? "options" : "manual")
@@ -182,12 +182,13 @@ export function AddTaskDialog({
                   <label className="text-sm font-medium text-foreground">Priority</label>
                   <select
                     value={priority}
-                    onChange={(event) => setPriority(event.target.value as TaskPriority)}
-                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
-                  >
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
+                  onChange={(event) => setPriority(event.target.value as TaskPriority)}
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                >
+                  <option value="none">None</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
                   </select>
                 </div>
               </div>
