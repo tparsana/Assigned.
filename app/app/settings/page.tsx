@@ -697,8 +697,7 @@ export default function SettingsPage() {
                     <option value="top3">Top 3 Method</option>
                     <option value="ivylee">Ivy Lee Method</option>
                     <option value="hybrid">Hybrid</option>
-                    <option value="time-blocking">Time Blocking</option>
-                    <option value="kanban">Kanban</option>
+                    <option value="none">None</option>
                   </select>
                 </div>
 

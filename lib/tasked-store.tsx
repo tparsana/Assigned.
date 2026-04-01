@@ -29,7 +29,7 @@ import { createClient } from "@/lib/supabase/client"
 export type TaskSource = "manual" | "image" | "voice" | "imported"
 export type TaskPriority = "none" | "high" | "medium" | "low"
 export type BoardColumn = "inbox" | "today" | "doing" | "waiting" | "done"
-export type PlanningMethod = "top3" | "ivylee" | "hybrid" | "time-blocking" | "kanban"
+export type PlanningMethod = "top3" | "ivylee" | "hybrid" | "none" | "time-blocking" | "kanban"
 export type InboxItemStatus = "pending" | "approved" | "discarded"
 export type BlockType = "focus" | "meeting" | "break" | "buffer" | "admin"
 export type ListIcon =
@@ -204,6 +204,7 @@ type TaskedContextValue = TaskedState & {
   deleteScheduleBlock: (blockId: string) => void
   scheduleTask: (taskId: string, input?: Partial<AddScheduleBlockInput>) => void
   unscheduleTask: (taskId: string) => void
+  moveUnfinishedTasksToDate: (sourceDate: string, targetDate: string) => void
   moveUnfinishedTodayToTomorrow: () => void
   startTomorrowPlan: () => void
   addReviewWin: (value: string) => void
@@ -1065,20 +1066,34 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
-  const moveUnfinishedTodayToTomorrow = useCallback(() => {
+  const moveUnfinishedTasksToDate = useCallback((sourceDate: string, targetDate: string) => {
     const todayValue = dateKey(new Date())
-    const tomorrowValue = dateKey(addDays(new Date(), 1))
+
+    if (!sourceDate || !targetDate || sourceDate === targetDate) {
+      return
+    }
 
     setState((current) => ({
       ...current,
       tasks: current.tasks.map((task) =>
-        !task.completed && task.plannedDate === todayValue
-          ? { ...task, plannedDate: tomorrowValue, boardColumn: "waiting" }
+        !task.completed && task.plannedDate === sourceDate
+          ? {
+              ...task,
+              plannedDate: targetDate,
+              boardColumn: targetDate === todayValue ? "today" : "waiting",
+            }
           : task
       ),
-      scheduleBlocks: current.scheduleBlocks.filter((block) => block.date !== todayValue || !block.taskId),
+      scheduleBlocks: current.scheduleBlocks.filter((block) => block.date !== sourceDate || !block.taskId),
     }))
   }, [])
+
+  const moveUnfinishedTodayToTomorrow = useCallback(() => {
+    const todayValue = dateKey(new Date())
+    const tomorrowValue = dateKey(addDays(new Date(), 1))
+
+    moveUnfinishedTasksToDate(todayValue, tomorrowValue)
+  }, [moveUnfinishedTasksToDate])
 
   const startTomorrowPlan = useCallback(() => {
     const tomorrowValue = dateKey(addDays(new Date(), 1))
@@ -1270,6 +1285,7 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
       deleteScheduleBlock,
       scheduleTask,
       unscheduleTask,
+      moveUnfinishedTasksToDate,
       moveUnfinishedTodayToTomorrow,
       startTomorrowPlan,
       addReviewWin,
@@ -1305,6 +1321,7 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
       exportState,
       hydrated,
       moveTaskToColumn,
+      moveUnfinishedTasksToDate,
       moveUnfinishedTodayToTomorrow,
       removeNextWeekPriority,
       removeReviewWin,

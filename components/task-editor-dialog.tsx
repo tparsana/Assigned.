@@ -26,6 +26,28 @@ const boardColumnOptions: Array<{ value: BoardColumn; label: string }> = [
   { value: "done", label: "Done" },
 ]
 
+function splitEstimatedMinutes(value: number | null | undefined) {
+  if (!value) {
+    return { hours: "", minutes: "" }
+  }
+
+  const hours = Math.floor(value / 60)
+  const minutes = value % 60
+
+  return {
+    hours: hours > 0 ? String(hours) : "",
+    minutes: minutes > 0 ? String(minutes) : "",
+  }
+}
+
+function mergeEstimatedMinutes(hours: string, minutes: string) {
+  const normalizedHours = Number(hours || "0")
+  const normalizedMinutes = Number(minutes || "0")
+  const total = normalizedHours * 60 + normalizedMinutes
+
+  return total > 0 ? total : null
+}
+
 type TaskEditorDialogProps = {
   task: Task | null
   open: boolean
@@ -39,6 +61,7 @@ export function TaskEditorDialog({ task, open, onOpenChange }: TaskEditorDialogP
   const [priority, setPriority] = useState<TaskPriority>("none")
   const [plannedDate, setPlannedDate] = useState("")
   const [dueDate, setDueDate] = useState("")
+  const [estimatedHours, setEstimatedHours] = useState("")
   const [estimatedMinutes, setEstimatedMinutes] = useState("")
   const [boardColumn, setBoardColumn] = useState<BoardColumn>("waiting")
   const [note, setNote] = useState("")
@@ -53,7 +76,9 @@ export function TaskEditorDialog({ task, open, onOpenChange }: TaskEditorDialogP
     setPriority(task.priority)
     setPlannedDate(task.plannedDate ?? "")
     setDueDate(task.dueDate ?? "")
-    setEstimatedMinutes(task.estimatedMinutes ? String(task.estimatedMinutes) : "")
+    const estimate = splitEstimatedMinutes(task.estimatedMinutes)
+    setEstimatedHours(estimate.hours)
+    setEstimatedMinutes(estimate.minutes)
     setBoardColumn(task.boardColumn)
     setNote(task.note ?? "")
   }, [open, task])
@@ -76,7 +101,7 @@ export function TaskEditorDialog({ task, open, onOpenChange }: TaskEditorDialogP
       priority,
       plannedDate: plannedDate || null,
       dueDate: dueDate || null,
-      estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+      estimatedMinutes: mergeEstimatedMinutes(estimatedHours, estimatedMinutes),
       note: note.trim(),
     })
 
@@ -179,15 +204,26 @@ export function TaskEditorDialog({ task, open, onOpenChange }: TaskEditorDialogP
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Est. minutes</label>
-                <Input
-                  type="number"
-                  min="5"
-                  step="5"
-                  value={estimatedMinutes}
-                  onChange={(event) => setEstimatedMinutes(event.target.value)}
-                  placeholder="30"
-                />
+                <label className="text-sm font-medium text-foreground">Estimated time</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={estimatedHours}
+                    onChange={(event) => setEstimatedHours(event.target.value)}
+                    placeholder="0 hr"
+                  />
+                  <Input
+                    type="number"
+                    min="0"
+                    max="59"
+                    step="5"
+                    value={estimatedMinutes}
+                    onChange={(event) => setEstimatedMinutes(event.target.value)}
+                    placeholder="0 min"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">

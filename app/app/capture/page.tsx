@@ -24,6 +24,7 @@ import { format } from "date-fns"
 import { formatTaskDateLabel, useTaskedState } from "@/lib/tasked-store"
 
 type CaptureState = "idle" | "uploading" | "processing" | "review"
+const LIFE_LIST_ID = "__life__"
 
 interface ExtractedTask {
   id: number
@@ -35,7 +36,7 @@ interface ExtractedTask {
 }
 
 export default function CapturePage() {
-  const { addTask, lists, todayKey } = useTaskedState()
+  const { addTask, addList, lists, todayKey } = useTaskedState()
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const [state, setState] = useState<CaptureState>("idle")
@@ -132,12 +133,18 @@ export default function CapturePage() {
   }
 
   const saveReviewedTasks = () => {
+    let lifeListId = lists.find((list) => list.name.trim().toLowerCase() === "life")?.id ?? null
+
     extractedTasks
       .filter((task) => task.selected)
       .forEach((task) => {
+        if (task.suggestedListId === LIFE_LIST_ID && !lifeListId) {
+          lifeListId = addList("Life")
+        }
+
         addTask({
           title: task.title,
-          listId: task.suggestedListId,
+          listId: task.suggestedListId === LIFE_LIST_ID ? lifeListId ?? "" : task.suggestedListId,
           plannedDate: task.suggestedDate,
           dueDate: task.suggestedDate,
           boardColumn: task.suggestedDate === todayKey ? "today" : "waiting",
@@ -200,6 +207,12 @@ export default function CapturePage() {
     )
     setEditingTaskId(null)
     setEditingTaskTitle("")
+  }
+
+  const updateSuggestedList = (taskId: number, suggestedListId: string) => {
+    setExtractedTasks((current) =>
+      current.map((task) => (task.id === taskId ? { ...task, suggestedListId } : task))
+    )
   }
 
   return (
@@ -354,7 +367,10 @@ export default function CapturePage() {
 
             <div className="space-y-3 mb-6">
               {extractedTasks.map((task) => {
-                const list = lists.find((value) => value.id === task.suggestedListId)
+                const list =
+                  task.suggestedListId === LIFE_LIST_ID
+                    ? { name: "Life" }
+                    : lists.find((value) => value.id === task.suggestedListId)
 
                 return (
                   <div
@@ -410,6 +426,21 @@ export default function CapturePage() {
                               {task.confidence}% confidence
                             </span>
                           )}
+                        </div>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <label className="text-xs font-medium text-muted-foreground">List</label>
+                          <select
+                            value={task.suggestedListId}
+                            onChange={(event) => updateSuggestedList(task.id, event.target.value)}
+                            className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+                          >
+                            {lists.map((listOption) => (
+                              <option key={listOption.id} value={listOption.id}>
+                                {listOption.name}
+                              </option>
+                            ))}
+                            <option value={LIFE_LIST_ID}>Life</option>
+                          </select>
                         </div>
                     </div>
                     <div className="flex items-center gap-1">

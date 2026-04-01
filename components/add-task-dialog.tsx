@@ -16,6 +16,16 @@ import {
 import { Input } from "@/components/ui/input"
 import { useTaskedState, type BoardColumn, type TaskPriority } from "@/lib/tasked-store"
 
+export const LIFE_LIST_ID = "__life__"
+
+function mergeEstimatedMinutes(hours: string, minutes: string) {
+  const normalizedHours = Number(hours || "0")
+  const normalizedMinutes = Number(minutes || "0")
+  const total = normalizedHours * 60 + normalizedMinutes
+
+  return total > 0 ? total : null
+}
+
 type AddTaskDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -37,13 +47,14 @@ export function AddTaskDialog({
   description = "Create a task and place it where you need it.",
   showCaptureOption = true,
 }: AddTaskDialogProps) {
-  const { addTask, lists, todayKey } = useTaskedState()
+  const { addTask, addList, lists, todayKey } = useTaskedState()
   const fallbackListId = defaultListId ?? lists[0]?.id ?? ""
   const [mode, setMode] = useState<"options" | "manual">(showCaptureOption ? "options" : "manual")
   const [taskTitle, setTaskTitle] = useState("")
   const [listId, setListId] = useState(fallbackListId)
   const [priority, setPriority] = useState<TaskPriority>("none")
   const [plannedDate, setPlannedDate] = useState(defaultPlannedDate ?? todayKey)
+  const [estimatedHours, setEstimatedHours] = useState("")
   const [estimatedMinutes, setEstimatedMinutes] = useState("30")
 
   useEffect(() => {
@@ -55,6 +66,7 @@ export function AddTaskDialog({
     setListId(defaultListId ?? lists[0]?.id ?? "")
     setPriority("none")
     setPlannedDate(defaultPlannedDate ?? todayKey)
+    setEstimatedHours("")
     setEstimatedMinutes("30")
     setMode(showCaptureOption ? "options" : "manual")
   }, [defaultListId, defaultPlannedDate, lists, open, showCaptureOption, todayKey])
@@ -70,13 +82,19 @@ export function AddTaskDialog({
       return
     }
 
+    const lifeList = lists.find((list) => list.name.trim().toLowerCase() === "life") ?? null
+    const resolvedListId =
+      listId === LIFE_LIST_ID
+        ? lifeList?.id ?? addList("Life")
+        : listId
+
     addTask({
       title: titleValue,
-      listId,
+      listId: resolvedListId,
       priority,
       plannedDate: plannedDate || null,
       dueDate: plannedDate || null,
-      estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+      estimatedMinutes: mergeEstimatedMinutes(estimatedHours, estimatedMinutes),
       boardColumn:
         defaultBoardColumn ??
         (plannedDate === todayKey ? "today" : "waiting"),
@@ -167,13 +185,19 @@ export function AddTaskDialog({
                     className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
                   >
                     {lists.length === 0 ? (
-                      <option value="">No lists yet</option>
+                      <>
+                        <option value="">No lists yet</option>
+                        <option value={LIFE_LIST_ID}>Life</option>
+                      </>
                     ) : (
-                      lists.map((list) => (
-                        <option key={list.id} value={list.id}>
-                          {list.name}
-                        </option>
-                      ))
+                      <>
+                        {lists.map((list) => (
+                          <option key={list.id} value={list.id}>
+                            {list.name}
+                          </option>
+                        ))}
+                        <option value={LIFE_LIST_ID}>Life</option>
+                      </>
                     )}
                   </select>
                 </div>
@@ -204,14 +228,26 @@ export function AddTaskDialog({
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Est. minutes</label>
-                  <Input
-                    type="number"
-                    min="5"
-                    step="5"
-                    value={estimatedMinutes}
-                    onChange={(event) => setEstimatedMinutes(event.target.value)}
-                  />
+                  <label className="text-sm font-medium text-foreground">Estimated time</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={estimatedHours}
+                      onChange={(event) => setEstimatedHours(event.target.value)}
+                      placeholder="0 hr"
+                    />
+                    <Input
+                      type="number"
+                      min="0"
+                      max="59"
+                      step="5"
+                      value={estimatedMinutes}
+                      onChange={(event) => setEstimatedMinutes(event.target.value)}
+                      placeholder="0 min"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
