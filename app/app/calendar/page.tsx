@@ -5,48 +5,60 @@ import { useMemo, useState } from "react"
 import { addDays, format, parseISO } from "date-fns"
 
 import { AddTaskDialog } from "@/components/add-task-dialog"
+import { DayTimeline } from "@/components/day-timeline"
 import { Button } from "@/components/ui/button"
 import {
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Plus,
-  Coffee,
-  Brain,
-  Users,
-  AlertCircle,
-  X,
-} from "lucide-react"
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { AlertCircle, Calendar, ChevronLeft, ChevronRight, Clock, GripVertical, Plus } from "lucide-react"
 import {
   formatLongDateLabel,
   formatTaskDateLabel,
-  formatTimeLabel,
-  getScheduleBlockStyle,
   getScheduledBlocksForDate,
   getUnscheduledTasksForDate,
   useTaskedState,
-  type ScheduleBlock,
+  type BlockType,
+  type Task,
 } from "@/lib/tasked-store"
 
 type ViewMode = "day" | "week"
 
-const hours = Array.from({ length: 12 }, (_, index) => index + 8)
+const DAY_HOURS = Array.from({ length: 24 }, (_, index) => index)
+
+function getDefaultStartTime(currentDateKey: string) {
+  const now = new Date()
+  if (format(now, "yyyy-MM-dd") !== currentDateKey) {
+    return "09:00"
+  }
+
+  const rounded = new Date(now)
+  rounded.setSeconds(0, 0)
+  rounded.setMinutes(Math.ceil(rounded.getMinutes() / 15) * 15)
+  if (rounded.getMinutes() === 60) {
+    rounded.setHours(rounded.getHours() + 1, 0, 0, 0)
+  }
+
+  return `${String(rounded.getHours()).padStart(2, "0")}:${String(rounded.getMinutes()).padStart(2, "0")}`
+}
 
 export default function CalendarPage() {
-  const {
-    tasks,
-    scheduleBlocks,
-    scheduleTask,
-    unscheduleTask,
-    deleteScheduleBlock,
-  } = useTaskedState()
+  const { tasks, scheduleBlocks, scheduleTask, unscheduleTask, deleteScheduleBlock } = useTaskedState()
 
   const [view, setView] = useState<ViewMode>("day")
   const [currentDate, setCurrentDate] = useState(new Date())
   const [addTaskOpen, setAddTaskOpen] = useState(false)
+  const [taskToSchedule, setTaskToSchedule] = useState<Task | null>(null)
+  const [scheduleStartTime, setScheduleStartTime] = useState("09:00")
+  const [scheduleType, setScheduleType] = useState<BlockType>("focus")
 
   const currentDateKey = format(currentDate, "yyyy-MM-dd")
+  const now = new Date()
   const dayBlocks = useMemo(
     () => getScheduledBlocksForDate(scheduleBlocks, currentDateKey),
     [currentDateKey, scheduleBlocks]
@@ -55,61 +67,52 @@ export default function CalendarPage() {
     () => getUnscheduledTasksForDate(tasks, scheduleBlocks, currentDateKey),
     [currentDateKey, scheduleBlocks, tasks]
   )
-
-  const getBlockIcon = (type: ScheduleBlock["type"]) => {
-    switch (type) {
-      case "focus":
-        return Brain
-      case "meeting":
-        return Users
-      case "break":
-        return Coffee
-      default:
-        return Clock
-    }
-  }
-
-  const getBlockTone = (type: ScheduleBlock["type"]) => {
-    switch (type) {
-      case "focus":
-        return "bg-celeste/50 border-celeste"
-      case "meeting":
-        return "bg-marigold/20 border-marigold/50"
-      case "break":
-      case "buffer":
-        return "bg-muted border-border"
-      default:
-        return "bg-primary/10 border-primary/30"
-    }
-  }
-
-  const currentTimeIndicator = useMemo(() => {
-    const now = new Date()
-    if (format(now, "yyyy-MM-dd") !== currentDateKey) {
-      return null
-    }
-
-    const minutesFromStart = (now.getHours() - 8) * 60 + now.getMinutes()
-    if (minutesFromStart < 0 || minutesFromStart > 12 * 60) {
-      return null
-    }
-
-    return `${(minutesFromStart / 60) * 80}px`
-  }, [currentDateKey])
-
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(currentDate, index))
 
+  const openScheduleDialog = (task: Task, preferredStartTime?: string) => {
+    setTaskToSchedule(task)
+    setScheduleStartTime(preferredStartTime ?? getDefaultStartTime(currentDateKey))
+    setScheduleType("focus")
+  }
+
+  const closeScheduleDialog = () => {
+    setTaskToSchedule(null)
+    setScheduleStartTime("09:00")
+    setScheduleType("focus")
+  }
+
+  const confirmScheduleTask = () => {
+    if (!taskToSchedule) {
+      return
+    }
+
+    scheduleTask(taskToSchedule.id, {
+      date: currentDateKey,
+      startTime: scheduleStartTime,
+      type: scheduleType,
+    })
+    closeScheduleDialog()
+  }
+
+  const handleDropTaskAtTime = (taskId: string, startTime: string) => {
+    scheduleTask(taskId, {
+      date: currentDateKey,
+      startTime,
+      type: "focus",
+    })
+  }
+
   return (
-    <div className="px-4 lg:px-8 py-6 pb-24 lg:pb-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+    <div className="flex min-h-0 flex-col px-4 py-6 pb-24 lg:px-8 lg:pb-6">
+      <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-semibold text-foreground flex items-center gap-3">
-            <Calendar className="w-7 h-7" />
+          <h1 className="flex items-center gap-3 text-2xl font-semibold text-foreground">
+            <Calendar className="h-7 w-7" />
             Time Blocking
           </h1>
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -117,9 +120,9 @@ export default function CalendarPage() {
               className="border-border"
               onClick={() => setCurrentDate((date) => addDays(date, view === "day" ? -1 : -7))}
             >
-              <ChevronLeft className="w-4 h-4" />
+              <ChevronLeft className="h-4 w-4" />
             </Button>
-            <div className="px-4 py-2 bg-card border border-border rounded-lg min-w-[200px] text-center">
+            <div className="min-w-[200px] rounded-lg border border-border bg-card px-4 py-2 text-center">
               <span className="font-medium text-foreground">{formatLongDateLabel(currentDateKey)}</span>
             </div>
             <Button
@@ -128,27 +131,23 @@ export default function CalendarPage() {
               className="border-border"
               onClick={() => setCurrentDate((date) => addDays(date, view === "day" ? 1 : 7))}
             >
-              <ChevronRight className="w-4 h-4" />
+              <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
 
-          <div className="flex items-center bg-muted rounded-lg p-1">
+          <div className="flex items-center rounded-lg bg-muted p-1">
             <button
               onClick={() => setView("day")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                view === "day"
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                view === "day" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Day
             </button>
             <button
               onClick={() => setView("week")}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                view === "week"
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
+              className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                view === "week" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               Week
@@ -158,47 +157,56 @@ export default function CalendarPage() {
       </div>
 
       {view === "day" ? (
-        <div className="grid lg:grid-cols-4 gap-6">
-          <div className="lg:col-span-1 order-2 lg:order-1">
-            <div className="bg-card rounded-xl border border-border p-4 sticky top-24">
-              <div className="flex items-center justify-between mb-4">
+        <div className="grid gap-6 lg:min-h-0 lg:flex-1 lg:grid-cols-4 lg:h-[calc(100dvh-13rem)] lg:min-h-[38rem]">
+          <div className="order-1 lg:col-span-1 lg:min-h-0">
+            <div className="flex h-[34dvh] min-h-[260px] flex-col rounded-xl border border-border bg-card p-4 lg:h-full">
+              <div className="mb-4 flex items-center justify-between">
                 <h2 className="font-semibold text-foreground">Unscheduled</h2>
                 <span className="text-sm text-muted-foreground">{unscheduledTasks.length}</span>
               </div>
-              <p className="text-sm text-muted-foreground mb-4">
-                Quickly place tasks into today’s calendar.
+              <p className="mb-4 text-sm text-muted-foreground">
+                Drag tasks onto the timeline or choose an exact time.
               </p>
-              <div className="space-y-2">
+
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                 {unscheduledTasks.length === 0 ? (
-                  <div className="p-4 rounded-lg bg-background text-sm text-muted-foreground">
+                  <div className="rounded-lg bg-background p-4 text-sm text-muted-foreground">
                     Everything planned for this day is already scheduled.
                   </div>
                 ) : (
                   unscheduledTasks.map((task) => (
                     <div
                       key={task.id}
-                      className="p-3 bg-background rounded-lg border border-border hover:shadow-sm transition-shadow"
+                      draggable
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData("text/task-id", task.id)
+                        event.dataTransfer.effectAllowed = "move"
+                      }}
+                      className="rounded-lg border border-border bg-background p-3 transition-shadow hover:shadow-sm"
                     >
-                      <div className="font-medium text-foreground text-sm">{task.title}</div>
-                      <div className="flex items-center gap-2 mt-1">
-                        {task.estimatedMinutes && (
+                      <div className="mb-1 flex items-start justify-between gap-3">
+                        <div className="text-sm font-medium text-foreground">{task.title}</div>
+                        <GripVertical className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                      </div>
+                      <div className="mt-1 flex items-center gap-2">
+                        {task.estimatedMinutes ? (
                           <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Clock className="w-3 h-3" />
+                            <Clock className="h-3 w-3" />
                             {task.estimatedMinutes}m
                           </span>
-                        )}
-                        {task.dueDate && (
+                        ) : null}
+                        {task.dueDate ? (
                           <span className="flex items-center gap-1 text-xs text-marigold">
-                            <AlertCircle className="w-3 h-3" />
+                            <AlertCircle className="h-3 w-3" />
                             {formatTaskDateLabel(task.dueDate)}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="w-full mt-3 border-border"
-                        onClick={() => scheduleTask(task.id, { date: currentDateKey, type: "focus" })}
+                        className="mt-3 w-full border-border"
+                        onClick={() => openScheduleDialog(task)}
                       >
                         Schedule Task
                       </Button>
@@ -206,108 +214,60 @@ export default function CalendarPage() {
                   ))
                 )}
               </div>
-              <Button variant="ghost" className="w-full mt-4 text-muted-foreground" onClick={() => setAddTaskOpen(true)}>
-                <Plus className="w-4 h-4 mr-2" />
+
+              <Button
+                variant="ghost"
+                className="mt-4 w-full text-muted-foreground"
+                onClick={() => setAddTaskOpen(true)}
+              >
+                <Plus className="mr-2 h-4 w-4" />
                 Add Task
               </Button>
             </div>
           </div>
 
-          <div className="lg:col-span-3 order-1 lg:order-2">
-            <div className="bg-card rounded-xl border border-border overflow-hidden">
-              <div className="relative" style={{ height: `${hours.length * 80}px` }}>
-                {hours.map((hour, index) => (
-                  <div
-                    key={hour}
-                    className="absolute left-0 right-0 border-t border-border flex"
-                    style={{ top: `${index * 80}px` }}
-                  >
-                    <div className="w-16 md:w-20 px-2 py-2 text-xs text-muted-foreground bg-muted/30">
-                      {hour > 12 ? `${hour - 12} PM` : hour === 12 ? "12 PM" : `${hour} AM`}
-                    </div>
-                    <div className="flex-1" />
-                  </div>
-                ))}
-
-                <div className="absolute left-16 md:left-20 right-4 top-0">
-                  {dayBlocks.map((block) => {
-                    const Icon = getBlockIcon(block.type)
-
-                    return (
-                      <div
-                        key={block.id}
-                        className={`absolute left-0 right-0 ${getBlockTone(block.type)} border rounded-lg p-3 hover:shadow-md transition-shadow`}
-                        style={getScheduleBlockStyle(block)}
-                      >
-                        <div className="flex items-start gap-2">
-                          <Icon className="w-4 h-4 text-foreground/70 mt-0.5" />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-foreground text-sm truncate">
-                              {block.title}
-                            </div>
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              {formatTimeLabel(block.startTime)} - {formatTimeLabel(block.endTime)}
-                            </div>
-                          </div>
-                          {block.taskId ? (
-                            <button
-                              onClick={() => unscheduleTask(block.taskId!)}
-                              className="p-1 text-muted-foreground hover:text-foreground rounded"
-                              aria-label="Unschedule task"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => deleteScheduleBlock(block.id)}
-                              className="p-1 text-muted-foreground hover:text-foreground rounded"
-                              aria-label="Remove block"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-
-                {currentTimeIndicator && (
-                  <div
-                    className="absolute left-16 md:left-20 right-0 flex items-center z-10"
-                    style={{ top: currentTimeIndicator }}
-                  >
-                    <div className="w-3 h-3 rounded-full bg-destructive" />
-                    <div className="flex-1 h-0.5 bg-destructive" />
-                  </div>
-                )}
+          <div className="order-2 lg:col-span-3 lg:min-h-0">
+            <div className="flex h-[52dvh] min-h-[340px] flex-col rounded-xl border border-border bg-card p-4 lg:h-full">
+              <div className="min-h-0 flex-1">
+                <DayTimeline
+                  blocks={dayBlocks}
+                  hours={DAY_HOURS}
+                  now={now}
+                  showCurrentTime={format(now, "yyyy-MM-dd") === currentDateKey}
+                  scrollHeightClassName="h-full"
+                  autoScroll
+                  fillParent
+                  onDropTaskAtTime={handleDropTaskAtTime}
+                  onUnscheduleTask={unscheduleTask}
+                  onDeleteBlock={deleteScheduleBlock}
+                />
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-4 mt-4 text-sm">
+            <div className="mt-4 flex flex-wrap items-center gap-4 text-sm">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-celeste/50 border border-celeste" />
+                <div className="h-4 w-4 rounded border border-celeste bg-celeste/50" />
                 <span className="text-muted-foreground">Focus Time</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-marigold/20 border border-marigold/50" />
+                <div className="h-4 w-4 rounded border border-marigold/50 bg-marigold/20" />
                 <span className="text-muted-foreground">Meeting</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-muted border border-border" />
+                <div className="h-4 w-4 rounded border border-border bg-muted" />
                 <span className="text-muted-foreground">Break / Buffer</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded bg-primary/10 border border-primary/30" />
+                <div className="h-4 w-4 rounded border border-primary/30 bg-primary/10" />
                 <span className="text-muted-foreground">Admin</span>
               </div>
             </div>
           </div>
         </div>
       ) : (
-        <div className="bg-card rounded-xl border border-border p-6">
-          <h2 className="font-semibold text-foreground mb-4">Week Overview</h2>
-          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h2 className="mb-4 font-semibold text-foreground">Week Overview</h2>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             {weekDays.map((day) => {
               const dayKey = format(day, "yyyy-MM-dd")
               const blocksForDay = getScheduledBlocksForDate(scheduleBlocks, dayKey)
@@ -316,12 +276,8 @@ export default function CalendarPage() {
               return (
                 <div key={dayKey} className="rounded-xl border border-border bg-background p-4">
                   <div className="font-medium text-foreground">{format(parseISO(dayKey), "EEE, MMM d")}</div>
-                  <div className="text-sm text-muted-foreground mt-1">
-                    {blocksForDay.length} scheduled blocks
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {unscheduledForDay.length} unscheduled tasks
-                  </div>
+                  <div className="mt-1 text-sm text-muted-foreground">{blocksForDay.length} scheduled blocks</div>
+                  <div className="text-sm text-muted-foreground">{unscheduledForDay.length} unscheduled tasks</div>
                 </div>
               )
             })}
@@ -336,6 +292,51 @@ export default function CalendarPage() {
         title="Add calendar task"
         description="Create a task for this day, then schedule it when you’re ready."
       />
+
+      <Dialog open={Boolean(taskToSchedule)} onOpenChange={(open) => !open && closeScheduleDialog()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Schedule task</DialogTitle>
+            <DialogDescription>
+              Place {taskToSchedule?.title ? `"${taskToSchedule.title}"` : "this task"} at a specific time on{" "}
+              {formatLongDateLabel(currentDateKey)}.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Start time</label>
+              <Input
+                type="time"
+                value={scheduleStartTime}
+                onChange={(event) => setScheduleStartTime(event.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Block type</label>
+              <select
+                value={scheduleType}
+                onChange={(event) => setScheduleType(event.target.value as BlockType)}
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+              >
+                <option value="focus">Focus</option>
+                <option value="meeting">Meeting</option>
+                <option value="admin">Admin</option>
+                <option value="break">Break</option>
+                <option value="buffer">Buffer</option>
+              </select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={closeScheduleDialog}>
+              Cancel
+            </Button>
+            <Button onClick={confirmScheduleTask}>Schedule</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

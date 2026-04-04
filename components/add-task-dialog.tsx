@@ -48,7 +48,15 @@ export function AddTaskDialog({
   showCaptureOption = true,
 }: AddTaskDialogProps) {
   const { addTask, addList, lists, todayKey } = useTaskedState()
-  const fallbackListId = defaultListId ?? lists[0]?.id ?? ""
+  const lifeListId = lists.find((list) => list.name.trim().toLowerCase() === "life")?.id ?? null
+  const resolveListValue = (value?: string) => {
+    if (value === LIFE_LIST_ID && lifeListId) {
+      return lifeListId
+    }
+
+    return value ?? lists[0]?.id ?? ""
+  }
+  const fallbackListId = resolveListValue(defaultListId)
   const [mode, setMode] = useState<"options" | "manual">(showCaptureOption ? "options" : "manual")
   const [taskTitle, setTaskTitle] = useState("")
   const [listId, setListId] = useState(fallbackListId)
@@ -63,13 +71,13 @@ export function AddTaskDialog({
     }
 
     setTaskTitle("")
-    setListId(defaultListId ?? lists[0]?.id ?? "")
+    setListId(resolveListValue(defaultListId))
     setPriority("none")
     setPlannedDate(defaultPlannedDate ?? todayKey)
     setEstimatedHours("")
     setEstimatedMinutes("30")
     setMode(showCaptureOption ? "options" : "manual")
-  }, [defaultListId, defaultPlannedDate, lists, open, showCaptureOption, todayKey])
+  }, [defaultListId, defaultPlannedDate, lifeListId, lists, open, showCaptureOption, todayKey])
 
   const closeDialog = () => {
     setMode(showCaptureOption ? "options" : "manual")
@@ -82,10 +90,9 @@ export function AddTaskDialog({
       return
     }
 
-    const lifeList = lists.find((list) => list.name.trim().toLowerCase() === "life") ?? null
     const resolvedListId =
       listId === LIFE_LIST_ID
-        ? lifeList?.id ?? addList("Life")
+        ? lifeListId ?? addList("Life")
         : listId
 
     addTask({
@@ -187,7 +194,7 @@ export function AddTaskDialog({
                     {lists.length === 0 ? (
                       <>
                         <option value="">No lists yet</option>
-                        <option value={LIFE_LIST_ID}>Life</option>
+                        {!lifeListId ? <option value={LIFE_LIST_ID}>Life</option> : null}
                       </>
                     ) : (
                       <>
@@ -196,7 +203,7 @@ export function AddTaskDialog({
                             {list.name}
                           </option>
                         ))}
-                        <option value={LIFE_LIST_ID}>Life</option>
+                        {!lifeListId ? <option value={LIFE_LIST_ID}>Life</option> : null}
                       </>
                     )}
                   </select>

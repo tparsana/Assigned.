@@ -17,7 +17,6 @@ import {
   ChevronRight,
   Clock,
   Star,
-  Sparkles,
   ArrowRight,
   RefreshCw,
 } from "lucide-react"
@@ -56,7 +55,6 @@ export default function PlannerPage() {
     lists,
     todayKey,
     toggleTask,
-    moveTaskToColumn,
     moveUnfinishedTasksToDate,
     moveUnfinishedTodayToTomorrow,
     startTomorrowPlan,
@@ -100,10 +98,6 @@ export default function PlannerPage() {
   const top3Tasks = plannerTasks.slice(0, 3)
   const otherTasks = plannerTasks.slice(3)
   const ivyLeeTasks = plannerTasks.slice(0, 6)
-  const currentTask =
-    top3Tasks.find((task) => !task.completed) ??
-    ivyLeeTasks.find((task) => !task.completed) ??
-    null
   const completedTop3 = top3Tasks.filter((task) => task.completed).length
   const completedIvyLee = ivyLeeTasks.filter((task) => task.completed).length
 
@@ -453,33 +447,6 @@ export default function PlannerPage() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-primary rounded-xl p-6 text-primary-foreground">
-            <h3 className="font-semibold mb-2">Focus Mode</h3>
-            <p className="text-primary-foreground/80 text-sm mb-4">
-              Mark your current priority as the task in progress for the rest of the app.
-            </p>
-            <Button
-              variant="secondary"
-              className="w-full bg-primary-foreground text-primary hover:bg-primary-foreground/90"
-              onClick={() => currentTask && moveTaskToColumn(currentTask.id, "doing")}
-              disabled={!currentTask}
-            >
-              Start Focus Session
-              <ChevronRight className="w-4 h-4 ml-2" />
-            </Button>
-          </div>
-
-          <div className="bg-card rounded-xl border border-border p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <Sparkles className="w-5 h-5 text-marigold" />
-              <h3 className="font-semibold text-foreground">AI Suggestions</h3>
-            </div>
-              <div className="space-y-3 text-sm text-muted-foreground">
-              <p>Your highest priority work is already in this plan. Try tackling it before noon.</p>
-              <p>Tasks with smaller estimates can wait until after your main block is done.</p>
-              </div>
-            </div>
-
           <div className="bg-card rounded-xl border border-border p-6">
             <h3 className="font-semibold text-foreground mb-4">End of Day</h3>
             <div className="space-y-3">

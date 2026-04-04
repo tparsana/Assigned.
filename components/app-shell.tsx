@@ -15,7 +15,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { createClient } from "@/lib/supabase/client"
-import { useTaskedState } from "@/lib/tasked-store"
+import {
+  formatPomodoroClock,
+  getPomodoroModeLabel,
+  getPomodoroRemainingSeconds,
+  useTaskedState,
+} from "@/lib/tasked-store"
 import {
   LayoutDashboard,
   CalendarDays,
@@ -25,12 +30,12 @@ import {
   BookOpen,
   Settings,
   Plus,
-  Bell,
   Menu,
   X,
   ChevronDown,
   LogOut,
   User,
+  Clock,
 } from "lucide-react"
 
 const sidebarItems = [
@@ -55,12 +60,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
-  const { profile, preferences, todayKey, hydrated } = useTaskedState()
+  const { profile, preferences, todayKey, hydrated, pomodoro } = useTaskedState()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [quoteIndex, setQuoteIndex] = useState(0)
   const [isSigningOut, setIsSigningOut] = useState(false)
+  const [timerNow, setTimerNow] = useState(() => Date.now())
   const isMinimalMode = hydrated && preferences.minimalMode
+  const isFocusPage = pathname === "/app/focus"
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -86,6 +93,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [isMinimalMode, pathname, router])
 
+  useEffect(() => {
+    if (pomodoro.status !== "running") {
+      return
+    }
+
+    setTimerNow(Date.now())
+    const interval = window.setInterval(() => setTimerNow(Date.now()), 1000)
+
+    return () => window.clearInterval(interval)
+  }, [pomodoro.status])
+
   const topBarMessage = pathname === "/app" ? motivationalQuotes[quoteIndex] : today
   const initials = `${profile.firstName?.[0] ?? "U"}${profile.lastName?.[0] ?? ""}`.trim()
   const minimalHeading =
@@ -94,6 +112,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       : pathname === "/app/capture"
         ? "Capture"
         : "All tasks, less noise"
+  const focusRemaining = getPomodoroRemainingSeconds(pomodoro, timerNow)
+  const focusHref = { pathname: "/app/focus", query: { from: pathname } }
+  const focusButtonLabel =
+    pomodoro.status === "running"
+      ? formatPomodoroClock(focusRemaining)
+      : pomodoro.status === "paused"
+        ? "Resume focus"
+        : "Focus"
+  const focusButtonMeta =
+    pomodoro.status === "idle"
+      ? "Pomodoro"
+      : pomodoro.status === "completed"
+        ? `${getPomodoroModeLabel(pomodoro.mode)} ready`
+        : getPomodoroModeLabel(pomodoro.mode)
 
   const handleSignOut = async () => {
     setIsSigningOut(true)
@@ -155,8 +187,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {isSigningOut ? "Signing out..." : "Sign out"}
         </DropdownMenuItem>
       </DropdownMenuContent>
-    </DropdownMenu>
+      </DropdownMenu>
   )
+
+  if (isFocusPage) {
+    return <div className="min-h-screen bg-background">{children}</div>
+  }
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -278,10 +314,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   >
                     <Plus className="w-5 h-5" />
                   </button>
-                  <button className="p-2 text-muted-foreground hover:text-foreground transition-colors rounded-lg hover:bg-muted relative">
-                    <Bell className="w-5 h-5" />
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-marigold rounded-full" />
-                  </button>
+                  <Link
+                    href={focusHref}
+                    className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2 text-foreground shadow-xs transition-colors hover:bg-muted"
+                  >
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        pomodoro.status === "running"
+                          ? "bg-primary shadow-[0_0_0_4px_rgba(28,28,28,0.08)]"
+                          : pomodoro.status === "completed"
+                            ? "bg-herb"
+                            : "bg-foreground/20"
+                      }`}
+                    />
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex flex-col items-start leading-none">
+                      <span className="text-sm font-medium">{focusButtonLabel}</span>
+                      <span className="text-[11px] text-muted-foreground">{focusButtonMeta}</span>
+                    </div>
+                  </Link>
                 </>
               )}
               {isMinimalMode ? (

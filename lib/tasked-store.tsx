@@ -138,6 +138,22 @@ export interface PrivacySettings {
   allowAnalytics: boolean
 }
 
+export type PomodoroMode = "focus" | "shortBreak" | "longBreak"
+export type PomodoroStatus = "idle" | "running" | "paused" | "completed"
+
+export interface PomodoroState {
+  mode: PomodoroMode
+  status: PomodoroStatus
+  selectedTaskId: string | null
+  durations: Record<PomodoroMode, number>
+  remainingSeconds: number
+  startedAt: string | null
+  endsAt: string | null
+  startedWithSeconds: number
+  completedFocusSessions: number
+  lastCompletedMode: PomodoroMode | null
+}
+
 export interface TaskedState {
   lists: TaskList[]
   tasks: Task[]
@@ -150,6 +166,7 @@ export interface TaskedState {
   ai: AISettings
   integrations: IntegrationSettings
   privacy: PrivacySettings
+  pomodoro: PomodoroState
 }
 
 type AddTaskInput = {
@@ -225,6 +242,13 @@ type TaskedContextValue = TaskedState & {
     value: IntegrationSettings[K]
   ) => void
   setPrivacySetting: <K extends keyof PrivacySettings>(key: K, value: PrivacySettings[K]) => void
+  setPomodoroTask: (taskId: string | null) => void
+  setPomodoroMode: (mode: PomodoroMode) => void
+  startPomodoro: (mode?: PomodoroMode) => void
+  pausePomodoro: () => void
+  resumePomodoro: () => void
+  resetPomodoro: (mode?: PomodoroMode) => void
+  endPomodoroSession: () => void
   exportState: () => string
   resetState: () => void
 }
@@ -233,6 +257,11 @@ const LEGACY_STORAGE_KEY = "tasked.local-state.v1"
 const STORAGE_KEY_PREFIX = "tasked.local-state.v2"
 const TASKED_STATE_TABLE = "tasked_user_states"
 const TaskedContext = createContext<TaskedContextValue | null>(null)
+const DEFAULT_POMODORO_DURATIONS: Record<PomodoroMode, number> = {
+  focus: 25,
+  shortBreak: 5,
+  longBreak: 15,
+}
 
 function makeId(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -338,6 +367,67 @@ export function formatTimeLabel(value: string) {
   return format(date, "h:mm a")
 }
 
+function createPomodoroSeed(): PomodoroState {
+  const focusSeconds = DEFAULT_POMODORO_DURATIONS.focus * 60
+
+  return {
+    mode: "focus",
+    status: "idle",
+    selectedTaskId: null,
+    durations: { ...DEFAULT_POMODORO_DURATIONS },
+    remainingSeconds: focusSeconds,
+    startedAt: null,
+    endsAt: null,
+    startedWithSeconds: focusSeconds,
+    completedFocusSessions: 0,
+    lastCompletedMode: null,
+  }
+}
+
+function getPomodoroModeSeconds(pomodoro: PomodoroState, mode = pomodoro.mode) {
+  return pomodoro.durations[mode] * 60
+}
+
+export function getPomodoroRemainingSeconds(pomodoro: PomodoroState, now = Date.now()) {
+  if (pomodoro.status !== "running" || !pomodoro.endsAt) {
+    return pomodoro.remainingSeconds
+  }
+
+  return Math.max(0, Math.ceil((new Date(pomodoro.endsAt).getTime() - now) / 1000))
+}
+
+export function getPomodoroModeLabel(mode: PomodoroMode) {
+  switch (mode) {
+    case "focus":
+      return "Focus"
+    case "shortBreak":
+      return "Short break"
+    case "longBreak":
+      return "Long break"
+    default:
+      return "Focus"
+  }
+}
+
+export function formatPomodoroClock(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`
+}
+
+export function isPomodoroSessionActive(pomodoro: PomodoroState) {
+  return pomodoro.status === "running" || pomodoro.status === "paused"
+}
+
+function getNextPomodoroMode(mode: PomodoroMode, completedFocusSessions: number): PomodoroMode {
+  if (mode === "focus") {
+    return completedFocusSessions % 4 === 0 ? "longBreak" : "shortBreak"
+  }
+
+  return "focus"
+}
+
 function getStorageKey(userId?: string | null) {
   if (!userId) {
     return LEGACY_STORAGE_KEY
@@ -400,6 +490,77 @@ function buildProfileSeed(user?: User | null): Partial<ProfileState> {
   }
 }
 
+function normalizeListName(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function dedupeLists(state: TaskedState): TaskedState {
+  if (state.lists.length < 2) {
+    return state
+  }
+
+  const taskCounts = new Map<string, number>()
+  const inboxCounts = new Map<string, number>()
+
+  state.tasks.forEach((task) => {
+    taskCounts.set(task.listId, (taskCounts.get(task.listId) ?? 0) + 1)
+  })
+
+  state.inboxItems.forEach((item) => {
+    inboxCounts.set(item.suggestedListId, (inboxCounts.get(item.suggestedListId) ?? 0) + 1)
+  })
+
+  const canonicalByName = new Map<string, TaskList>()
+
+  state.lists.forEach((list) => {
+    const key = normalizeListName(list.name)
+    const existing = canonicalByName.get(key)
+
+    if (!existing) {
+      canonicalByName.set(key, list)
+      return
+    }
+
+    const existingReferences =
+      (taskCounts.get(existing.id) ?? 0) + (inboxCounts.get(existing.id) ?? 0)
+    const candidateReferences =
+      (taskCounts.get(list.id) ?? 0) + (inboxCounts.get(list.id) ?? 0)
+
+    if (candidateReferences > existingReferences) {
+      canonicalByName.set(key, list)
+    }
+  })
+
+  const idMap = new Map<string, string>()
+  const dedupedLists = state.lists.filter((list) => {
+    const canonical = canonicalByName.get(normalizeListName(list.name))
+    if (!canonical) {
+      return true
+    }
+
+    idMap.set(list.id, canonical.id)
+    return canonical.id === list.id
+  })
+
+  const hasRemap = Array.from(idMap.entries()).some(([sourceId, targetId]) => sourceId !== targetId)
+  if (!hasRemap && dedupedLists.length === state.lists.length) {
+    return state
+  }
+
+  return {
+    ...state,
+    lists: dedupedLists,
+    tasks: state.tasks.map((task) => ({
+      ...task,
+      listId: idMap.get(task.listId) ?? task.listId,
+    })),
+    inboxItems: state.inboxItems.map((item) => ({
+      ...item,
+      suggestedListId: idMap.get(item.suggestedListId) ?? item.suggestedListId,
+    })),
+  }
+}
+
 function normalizeState(
   value: Partial<TaskedState> | null | undefined,
   fallback: TaskedState
@@ -408,7 +569,7 @@ function normalizeState(
     return fallback
   }
 
-  return {
+  return dedupeLists({
     ...fallback,
     ...value,
     lists: Array.isArray(value.lists) ? value.lists : fallback.lists,
@@ -452,7 +613,15 @@ function normalizeState(
       ...fallback.privacy,
       ...(value.privacy ?? {}),
     },
-  }
+    pomodoro: {
+      ...fallback.pomodoro,
+      ...(value.pomodoro ?? {}),
+      durations: {
+        ...fallback.pomodoro.durations,
+        ...(value.pomodoro?.durations ?? {}),
+      },
+    },
+  })
 }
 
 function syncProfileWithUser(state: TaskedState, user?: User | null) {
@@ -517,6 +686,7 @@ function createSeedState(profileSeed?: Partial<ProfileState>): TaskedState {
     privacy: {
       allowAnalytics: true,
     },
+    pomodoro: createPomodoroSeed(),
   }
 }
 
@@ -794,6 +964,10 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
       ...current,
       tasks: current.tasks.filter((task) => task.id !== taskId),
       scheduleBlocks: current.scheduleBlocks.filter((block) => block.taskId !== taskId),
+      pomodoro: {
+        ...current.pomodoro,
+        selectedTaskId: current.pomodoro.selectedTaskId === taskId ? null : current.pomodoro.selectedTaskId,
+      },
     }))
   }, [])
 
@@ -820,6 +994,7 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
 
   const moveTaskToColumn = useCallback((taskId: string, column: BoardColumn) => {
     const todayValue = dateKey(new Date())
+    const isDoneColumn = column === "done"
 
     setState((current) => ({
       ...current,
@@ -831,17 +1006,12 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
         return {
           ...task,
           boardColumn: column,
-          completed: column === "done" ? true : task.completed && column !== "done" ? false : task.completed,
+          completed: isDoneColumn,
           plannedDate:
             column === "today" && !task.plannedDate
               ? todayValue
               : task.plannedDate,
-          completedAt:
-            column === "done"
-              ? todayValue
-              : column !== "done"
-                ? null
-                : task.completedAt,
+          completedAt: isDoneColumn ? todayValue : null,
         }
       }),
     }))
@@ -849,26 +1019,41 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
 
   const addList = useCallback((name: string) => {
     const trimmed = name.trim()
-    const listId = makeId("list")
 
     if (!trimmed) {
-      return listId
+      return ""
     }
 
-    setState((current) => ({
-      ...current,
-      lists: [
-        ...current.lists,
-        {
-          id: listId,
-          name: trimmed,
-          icon: "folder",
-          colorClassName: "bg-muted text-foreground",
-        },
-      ],
-    }))
+    let resolvedListId = ""
 
-    return listId
+    setState((current) => {
+      const existingList = current.lists.find(
+        (list) => normalizeListName(list.name) === normalizeListName(trimmed)
+      )
+
+      if (existingList) {
+        resolvedListId = existingList.id
+        return current
+      }
+
+      const listId = makeId("list")
+      resolvedListId = listId
+
+      return {
+        ...current,
+        lists: [
+          ...current.lists,
+          {
+            id: listId,
+            name: trimmed,
+            icon: "folder",
+            colorClassName: "bg-muted text-foreground",
+          },
+        ],
+      }
+    })
+
+    return resolvedListId
   }, [])
 
   const addInboxItem = useCallback((input: AddInboxItemInput) => {
@@ -1258,6 +1443,207 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
     []
   )
 
+  const setPomodoroTask = useCallback((taskId: string | null) => {
+    setState((current) => ({
+      ...current,
+      pomodoro: {
+        ...current.pomodoro,
+        selectedTaskId: taskId,
+      },
+    }))
+  }, [])
+
+  const setPomodoroMode = useCallback((mode: PomodoroMode) => {
+    setState((current) => {
+      const remainingSeconds = getPomodoroModeSeconds(current.pomodoro, mode)
+
+      return {
+        ...current,
+        pomodoro: {
+          ...current.pomodoro,
+          mode,
+          status: "idle",
+          remainingSeconds,
+          startedAt: null,
+          endsAt: null,
+          startedWithSeconds: remainingSeconds,
+          lastCompletedMode: null,
+        },
+      }
+    })
+  }, [])
+
+  const startPomodoro = useCallback((mode?: PomodoroMode) => {
+    setState((current) => {
+      const targetMode = mode ?? current.pomodoro.mode
+      const seconds =
+        targetMode !== current.pomodoro.mode
+          ? getPomodoroModeSeconds(current.pomodoro, targetMode)
+          : current.pomodoro.status === "paused" || current.pomodoro.status === "completed"
+            ? current.pomodoro.remainingSeconds
+            : current.pomodoro.status === "running"
+              ? getPomodoroRemainingSeconds(current.pomodoro)
+              : getPomodoroModeSeconds(current.pomodoro, targetMode)
+      const endsAt = new Date(Date.now() + seconds * 1000).toISOString()
+
+      return {
+        ...current,
+        tasks:
+          targetMode === "focus" && current.pomodoro.selectedTaskId
+            ? current.tasks.map((task) =>
+                task.id === current.pomodoro.selectedTaskId
+                  ? {
+                      ...task,
+                      boardColumn: task.completed ? "done" : "doing",
+                      plannedDate: task.plannedDate ?? dateKey(new Date()),
+                    }
+                  : task
+              )
+            : current.tasks,
+        pomodoro: {
+          ...current.pomodoro,
+          mode: targetMode,
+          status: "running",
+          remainingSeconds: seconds,
+          startedAt: new Date().toISOString(),
+          endsAt,
+          startedWithSeconds: seconds,
+          lastCompletedMode: null,
+        },
+      }
+    })
+  }, [])
+
+  const pausePomodoro = useCallback(() => {
+    setState((current) => {
+      if (current.pomodoro.status !== "running") {
+        return current
+      }
+
+      return {
+        ...current,
+        pomodoro: {
+          ...current.pomodoro,
+          status: "paused",
+          remainingSeconds: getPomodoroRemainingSeconds(current.pomodoro),
+          startedAt: null,
+          endsAt: null,
+        },
+      }
+    })
+  }, [])
+
+  const resumePomodoro = useCallback(() => {
+    setState((current) => {
+      if (current.pomodoro.status !== "paused") {
+        return current
+      }
+
+      const endsAt = new Date(Date.now() + current.pomodoro.remainingSeconds * 1000).toISOString()
+
+      return {
+        ...current,
+        pomodoro: {
+          ...current.pomodoro,
+          status: "running",
+          startedAt: new Date().toISOString(),
+          endsAt,
+          startedWithSeconds: current.pomodoro.remainingSeconds,
+        },
+      }
+    })
+  }, [])
+
+  const resetPomodoro = useCallback((mode?: PomodoroMode) => {
+    setState((current) => {
+      const targetMode = mode ?? current.pomodoro.mode
+      const remainingSeconds = getPomodoroModeSeconds(current.pomodoro, targetMode)
+
+      return {
+        ...current,
+        pomodoro: {
+          ...current.pomodoro,
+          mode: targetMode,
+          status: "idle",
+          remainingSeconds,
+          startedAt: null,
+          endsAt: null,
+          startedWithSeconds: remainingSeconds,
+          lastCompletedMode: null,
+        },
+      }
+    })
+  }, [])
+
+  const endPomodoroSession = useCallback(() => {
+    setState((current) => {
+      const remainingSeconds = getPomodoroModeSeconds(current.pomodoro, "focus")
+
+      return {
+        ...current,
+        pomodoro: {
+          ...current.pomodoro,
+          mode: "focus",
+          status: "idle",
+          selectedTaskId: null,
+          remainingSeconds,
+          startedAt: null,
+          endsAt: null,
+          startedWithSeconds: remainingSeconds,
+          completedFocusSessions: 0,
+          lastCompletedMode: null,
+        },
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!hydrated || state.pomodoro.status !== "running") {
+      return
+    }
+
+    const syncCompletion = () => {
+      setState((current) => {
+        if (current.pomodoro.status !== "running") {
+          return current
+        }
+
+        const remainingSeconds = getPomodoroRemainingSeconds(current.pomodoro)
+        if (remainingSeconds > 0) {
+          return current
+        }
+
+        const completedMode = current.pomodoro.mode
+        const completedFocusSessions =
+          completedMode === "focus"
+            ? current.pomodoro.completedFocusSessions + 1
+            : current.pomodoro.completedFocusSessions
+        const nextMode = getNextPomodoroMode(completedMode, completedFocusSessions)
+        const nextSeconds = getPomodoroModeSeconds(current.pomodoro, nextMode)
+
+        return {
+          ...current,
+          pomodoro: {
+            ...current.pomodoro,
+            mode: nextMode,
+            status: "completed",
+            remainingSeconds: nextSeconds,
+            startedAt: null,
+            endsAt: null,
+            startedWithSeconds: nextSeconds,
+            completedFocusSessions,
+            lastCompletedMode: completedMode,
+          },
+        }
+      })
+    }
+
+    syncCompletion()
+    const interval = window.setInterval(syncCompletion, 1000)
+
+    return () => window.clearInterval(interval)
+  }, [hydrated, state.pomodoro.status, state.pomodoro.endsAt])
+
   const exportState = useCallback(() => JSON.stringify(state, null, 2), [state])
   const resetState = useCallback(() => {
     const nextState = createSeedState(buildProfileSeed(currentUserRef.current))
@@ -1300,6 +1686,13 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
       updateAISetting,
       setIntegrationConnected,
       setPrivacySetting,
+      setPomodoroTask,
+      setPomodoroMode,
+      startPomodoro,
+      pausePomodoro,
+      resumePomodoro,
+      resetPomodoro,
+      endPomodoroSession,
       exportState,
       resetState,
     }),
@@ -1326,7 +1719,14 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
       removeNextWeekPriority,
       removeReviewWin,
       scheduleTask,
+      setPomodoroTask,
+      setPomodoroMode,
       setIntegrationConnected,
+      startPomodoro,
+      pausePomodoro,
+      resumePomodoro,
+      resetPomodoro,
+      endPomodoroSession,
       setPrivacySetting,
       setReviewReflection,
       startTomorrowPlan,

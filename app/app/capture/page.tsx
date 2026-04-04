@@ -37,6 +37,7 @@ interface ExtractedTask {
 
 export default function CapturePage() {
   const { addTask, addList, lists, todayKey } = useTaskedState()
+  const lifeListId = lists.find((list) => list.name.trim().toLowerCase() === "life")?.id ?? null
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)
   const [state, setState] = useState<CaptureState>("idle")
@@ -371,6 +372,8 @@ export default function CapturePage() {
                   task.suggestedListId === LIFE_LIST_ID
                     ? { name: "Life" }
                     : lists.find((value) => value.id === task.suggestedListId)
+                const selectedListValue =
+                  task.suggestedListId === LIFE_LIST_ID && lifeListId ? lifeListId : task.suggestedListId
 
                 return (
                   <div
@@ -430,7 +433,7 @@ export default function CapturePage() {
                         <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                           <label className="text-xs font-medium text-muted-foreground">List</label>
                           <select
-                            value={task.suggestedListId}
+                            value={selectedListValue}
                             onChange={(event) => updateSuggestedList(task.id, event.target.value)}
                             className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
                           >
@@ -439,7 +442,7 @@ export default function CapturePage() {
                                 {listOption.name}
                               </option>
                             ))}
-                            <option value={LIFE_LIST_ID}>Life</option>
+                            {!lifeListId ? <option value={LIFE_LIST_ID}>Life</option> : null}
                           </select>
                         </div>
                     </div>
