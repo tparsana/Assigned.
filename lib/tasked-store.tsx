@@ -28,7 +28,7 @@ import { createClient } from "@/lib/supabase/client"
 
 export type TaskSource = "manual" | "image" | "voice" | "imported"
 export type TaskPriority = "none" | "high" | "medium" | "low"
-export type BoardColumn = "inbox" | "today" | "doing" | "waiting" | "done"
+export type BoardColumn = "inbox" | "today" | "doing" | "done"
 export type PlanningMethod = "top3" | "ivylee" | "hybrid" | "none" | "time-blocking" | "kanban"
 export type InboxItemStatus = "pending" | "approved" | "discarded"
 export type BlockType = "focus" | "meeting" | "break" | "buffer" | "admin"
@@ -494,6 +494,20 @@ function normalizeListName(value: string) {
   return value.trim().toLowerCase()
 }
 
+function normalizeBoardColumn(value: string | null | undefined): BoardColumn {
+  switch (value) {
+    case "today":
+    case "doing":
+    case "done":
+    case "inbox":
+      return value
+    case "waiting":
+      return "today"
+    default:
+      return "inbox"
+  }
+}
+
 function dedupeLists(state: TaskedState): TaskedState {
   if (state.lists.length < 2) {
     return state
@@ -573,7 +587,12 @@ function normalizeState(
     ...fallback,
     ...value,
     lists: Array.isArray(value.lists) ? value.lists : fallback.lists,
-    tasks: Array.isArray(value.tasks) ? value.tasks : fallback.tasks,
+    tasks: Array.isArray(value.tasks)
+      ? value.tasks.map((task) => ({
+          ...task,
+          boardColumn: normalizeBoardColumn(task.boardColumn),
+        }))
+      : fallback.tasks,
     inboxItems: Array.isArray(value.inboxItems) ? value.inboxItems : fallback.inboxItems,
     scheduleBlocks: Array.isArray(value.scheduleBlocks) ? value.scheduleBlocks : fallback.scheduleBlocks,
     review: {
@@ -768,7 +787,7 @@ function createTaskFromInboxItem(item: InboxItem): Task {
     dueDate: plannedDate,
     plannedDate,
     estimatedMinutes: 30,
-    boardColumn: plannedDate && plannedDate <= dateKey(new Date()) ? "today" : "waiting",
+    boardColumn: "today",
     source: item.source,
     tags: [],
     rawText: item.rawText,
@@ -937,7 +956,7 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
           plannedDate: input.plannedDate ?? null,
           estimatedMinutes: input.estimatedMinutes ?? null,
           note: input.note?.trim() ? input.note.trim() : "",
-          boardColumn: input.boardColumn ?? (input.plannedDate === dateKey(new Date()) ? "today" : "waiting"),
+          boardColumn: input.boardColumn ?? "today",
           source: input.source ?? "manual",
           tags: input.tags ?? [],
           rawText: input.rawText,
@@ -1265,7 +1284,7 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
           ? {
               ...task,
               plannedDate: targetDate,
-              boardColumn: targetDate === todayValue ? "today" : "waiting",
+              boardColumn: "today",
             }
           : task
       ),
@@ -1287,7 +1306,7 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
       ...current,
       tasks: current.tasks.map((task, index) =>
         !task.completed && !task.plannedDate && index < 3
-          ? { ...task, plannedDate: tomorrowValue, boardColumn: "waiting" }
+          ? { ...task, plannedDate: tomorrowValue, boardColumn: "today" }
           : task
       ),
     }))

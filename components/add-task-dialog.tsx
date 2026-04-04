@@ -102,9 +102,7 @@ export function AddTaskDialog({
       plannedDate: plannedDate || null,
       dueDate: plannedDate || null,
       estimatedMinutes: mergeEstimatedMinutes(estimatedHours, estimatedMinutes),
-      boardColumn:
-        defaultBoardColumn ??
-        (plannedDate === todayKey ? "today" : "waiting"),
+      boardColumn: defaultBoardColumn ?? "today",
     })
 
     closeDialog()

@@ -1,9 +1,18 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
+import { addDays, format } from "date-fns"
 
 import { AddTaskDialog } from "@/components/add-task-dialog"
+import { TaskEditorDialog } from "@/components/task-editor-dialog"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import {
   LayoutGrid,
@@ -11,12 +20,18 @@ import {
   Calendar,
   AlertCircle,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Pencil,
+  Plus,
 } from "lucide-react"
 import {
+  formatLongDateLabel,
   formatTaskDateLabel,
   getCompletedTaskAccentClass,
   getCompletedTaskAccentStyle,
   getDaysOverdue,
+  getTasksForDate,
   getTaskPriorityBadgeClass,
   getTaskPriorityBadgeStyle,
   getTaskListName,
@@ -26,12 +41,11 @@ import {
   type TaskList,
 } from "@/lib/tasked-store"
 
-const columns: Array<{ id: BoardColumn; title: string; color: string }> = [
-  { id: "inbox", title: "Backlog", color: "bg-muted" },
-  { id: "today", title: "Today", color: "bg-primary/10" },
-  { id: "doing", title: "Doing", color: "bg-secondary" },
-  { id: "waiting", title: "Waiting", color: "bg-accent" },
-  { id: "done", title: "Done", color: "bg-muted/80" },
+const columns: Array<{ id: BoardColumn; title: string; color: string; overlayColor: string }> = [
+  { id: "today", title: "Today", color: "bg-primary/10", overlayColor: "bg-primary/80" },
+  { id: "doing", title: "Doing", color: "bg-secondary", overlayColor: "bg-secondary/85" },
+  { id: "done", title: "Done", color: "bg-muted/80", overlayColor: "bg-muted/85" },
+  { id: "inbox", title: "Backlog", color: "bg-muted", overlayColor: "bg-muted/85" },
 ]
 
 type DragStartState = {
@@ -58,6 +72,10 @@ type ActiveDragState = {
   height: number
 }
 
+const mobileQuickActionOrder: BoardColumn[] = ["today", "doing", "done", "inbox"]
+const desktopQuickActionOrder: BoardColumn[] = ["today", "doing", "done", "inbox"]
+const MOBILE_SWIPE_REVEAL = 184
+
 function getColumnAtPoint(x: number, y: number) {
   const target = document.elementFromPoint(x, y)
   const column = target?.closest<HTMLElement>("[data-kanban-column-id]")
@@ -65,35 +83,190 @@ function getColumnAtPoint(x: number, y: number) {
   return columnId ? (columnId as BoardColumn) : null
 }
 
+function getColumnSurfaceClass(columnId: BoardColumn) {
+  return columns.find((column) => column.id === columnId)?.overlayColor ?? "bg-muted/90"
+}
+
+function getColumnOverlayStyle(columnId: BoardColumn) {
+  switch (columnId) {
+    case "today":
+      return { backgroundColor: "rgba(28, 28, 28, 0.18)" }
+    case "doing":
+      return { backgroundColor: "rgba(238, 240, 242, 0.84)" }
+    case "done":
+      return { backgroundColor: "rgba(236, 235, 228, 0.82)" }
+    case "inbox":
+      return { backgroundColor: "rgba(236, 235, 228, 0.88)" }
+    default:
+      return { backgroundColor: "rgba(236, 235, 228, 0.84)" }
+  }
+}
+
 function TaskCard({
   task,
   columnId,
   compactView,
   lists,
+  isMobile,
+  revealed,
   isDragging,
+  columnLabels,
+  showQuickActions = true,
   onDragStart,
+  onRevealChange,
+  onEditTask,
+  onMoveTask,
 }: {
   task: Task
   columnId: BoardColumn
   compactView: boolean
   lists: TaskList[]
+  isMobile: boolean
+  revealed: boolean
   isDragging?: boolean
+  columnLabels: Record<BoardColumn, string>
+  showQuickActions?: boolean
   onDragStart?: (event: ReactPointerEvent<HTMLDivElement>) => void
+  onRevealChange: (open: boolean) => void
+  onEditTask: () => void
+  onMoveTask: (columnId: BoardColumn) => void
 }) {
   const isOverdue = Boolean(task.dueDate && !task.completed && getDaysOverdue(task.dueDate) > 0)
+  const mobileQuickActionColumns = mobileQuickActionOrder.filter((value) => value !== columnId)
+  const desktopQuickActionColumns = desktopQuickActionOrder.filter((value) => value !== columnId)
+  const [swipeOffset, setSwipeOffset] = useState(0)
+  const swipeGestureRef = useRef<{
+    pointerId: number
+    startX: number
+    startY: number
+    baseOffset: number
+    lock: "pending" | "horizontal" | "vertical"
+  } | null>(null)
+
+  useEffect(() => {
+    if (!isMobile || !showQuickActions) {
+      setSwipeOffset(0)
+      return
+    }
+
+    setSwipeOffset(revealed ? -MOBILE_SWIPE_REVEAL : 0)
+  }, [isMobile, revealed, showQuickActions])
+
+  const runTaskAction = (action: () => void) => {
+    if (isMobile) {
+      onRevealChange(false)
+      setSwipeOffset(0)
+    }
+
+    action()
+  }
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!isMobile || !showQuickActions || event.pointerType === "mouse") {
+      onDragStart?.(event)
+      return
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId)
+    swipeGestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      baseOffset: revealed ? -MOBILE_SWIPE_REVEAL : 0,
+      lock: "pending",
+    }
+  }
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = swipeGestureRef.current
+    if (!isMobile || !gesture || gesture.pointerId !== event.pointerId) {
+      return
+    }
+
+    const movedX = event.clientX - gesture.startX
+    const movedY = event.clientY - gesture.startY
+
+    if (gesture.lock === "pending") {
+      if (Math.abs(movedX) < 8 && Math.abs(movedY) < 8) {
+        return
+      }
+
+      gesture.lock = Math.abs(movedX) > Math.abs(movedY) ? "horizontal" : "vertical"
+    }
+
+    if (gesture.lock !== "horizontal") {
+      return
+    }
+
+    event.preventDefault()
+    const nextOffset = Math.max(-MOBILE_SWIPE_REVEAL, Math.min(0, gesture.baseOffset + movedX))
+    setSwipeOffset(nextOffset)
+  }
+
+  const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const gesture = swipeGestureRef.current
+    if (!isMobile || !gesture || gesture.pointerId !== event.pointerId) {
+      return
+    }
+
+    const shouldReveal = gesture.lock === "horizontal" ? swipeOffset <= -MOBILE_SWIPE_REVEAL * 0.45 : !revealed
+    const nextRevealed = gesture.lock === "horizontal" ? shouldReveal : revealed
+
+    setSwipeOffset(nextRevealed ? -MOBILE_SWIPE_REVEAL : 0)
+    onRevealChange(nextRevealed)
+    swipeGestureRef.current = null
+  }
 
   return (
-    <div
-      data-slot="task-card"
-      onPointerDown={onDragStart}
-      className={cn(
-        "cursor-grab touch-none rounded-xl border border-border bg-background p-4 shadow-sm transition-all active:cursor-grabbing",
-        isOverdue && "border-destructive/30",
-        isDragging && "opacity-35 scale-[0.98]"
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+    <div className="relative overflow-hidden rounded-xl">
+      {isMobile && showQuickActions ? (
+        <div
+          onPointerDown={(event) => event.stopPropagation()}
+          className="absolute inset-y-0 right-0 flex w-[11.5rem] flex-col justify-between rounded-xl border border-border bg-muted/65 p-3"
+        >
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-foreground/10 bg-background/95 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background"
+              onClick={(event) => {
+                event.stopPropagation()
+                runTaskAction(onEditTask)
+              }}
+            >
+              Edit
+            </button>
+
+            {mobileQuickActionColumns.map((nextColumn) => (
+              <button
+                key={nextColumn}
+                type="button"
+                className="rounded-xl border border-foreground/10 bg-background/95 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  runTaskAction(() => onMoveTask(nextColumn))
+                }}
+              >
+                {columnLabels[nextColumn]}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div
+        data-slot="task-card"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
+        style={isMobile ? { transform: `translateX(${swipeOffset}px)` } : undefined}
+        className={cn(
+          "group relative cursor-grab touch-pan-y rounded-xl border border-border bg-background p-4 shadow-sm transition-all active:cursor-grabbing md:touch-none",
+          isOverdue && "border-destructive/30",
+          isDragging && "opacity-35 scale-[0.98]"
+        )}
+      >
+        <div className="min-w-0">
           <div className="font-medium text-foreground text-sm leading-5">{task.title}</div>
 
           {!compactView && (
@@ -143,39 +316,111 @@ function TaskCard({
               Completed
             </div>
           )}
-        </div>
 
+          {!isMobile && showQuickActions ? (
+            <div
+              className={cn(
+                "pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl p-4 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100"
+              )}
+            >
+              <div
+                aria-hidden="true"
+                className={cn("absolute inset-0 rounded-xl", getColumnSurfaceClass(columnId))}
+                style={getColumnOverlayStyle(columnId)}
+              />
+              <div
+                onPointerDown={(event) => event.stopPropagation()}
+                className="pointer-events-auto relative flex w-full flex-nowrap items-center justify-center gap-1.5"
+              >
+                {desktopQuickActionColumns.map((nextColumn) => (
+                  <button
+                    key={nextColumn}
+                    type="button"
+                    aria-label={`Move ${task.title} to ${columnLabels[nextColumn]}`}
+                    className={cn(
+                      "inline-flex min-w-0 flex-1 items-center justify-center rounded-full border border-foreground/10 bg-background/95 px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-background hover:text-foreground"
+                    )}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      runTaskAction(() => onMoveTask(nextColumn))
+                    }}
+                  >
+                    {columnLabels[nextColumn]}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  aria-label={`Edit ${task.title}`}
+                  className="inline-flex min-w-0 flex-1 items-center justify-center gap-1 rounded-full border border-foreground/10 bg-background/95 px-2 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-background"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    runTaskAction(onEditTask)
+                  }}
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   )
 }
 
 export default function KanbanPage() {
-  const { tasks, lists, moveTaskToColumn } = useTaskedState()
+  const isMobile = useIsMobile()
+  const { tasks, lists, todayKey, moveTaskToColumn } = useTaskedState()
   const [compactView, setCompactView] = useState(false)
   const [addTaskOpen, setAddTaskOpen] = useState(false)
-  const [targetColumn, setTargetColumn] = useState<BoardColumn>("waiting")
+  const [targetColumn, setTargetColumn] = useState<BoardColumn>("today")
+  const [currentDate, setCurrentDate] = useState(new Date())
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [revealedTaskId, setRevealedTaskId] = useState<string | null>(null)
   const [activeDrag, setActiveDrag] = useState<ActiveDragState | null>(null)
   const [hoverColumn, setHoverColumn] = useState<BoardColumn | null>(null)
   const dragStartRef = useRef<DragStartState | null>(null)
   const activeDragRef = useRef<ActiveDragState | null>(null)
   const hoverColumnRef = useRef<BoardColumn | null>(null)
+  const currentDateKey = format(currentDate, "yyyy-MM-dd")
+  const viewingToday = currentDateKey === todayKey
+  const visibleTasks = useMemo(() => getTasksForDate(tasks, currentDateKey), [currentDateKey, tasks])
+  const columnLabels = useMemo<Record<BoardColumn, string>>(
+    () => ({
+      today: viewingToday ? "Today" : "Planned",
+      doing: "Doing",
+      done: "Done",
+      inbox: "Backlog",
+    }),
+    [viewingToday]
+  )
 
   const tasksByColumn = useMemo(
     () =>
       columns.map((column) => ({
         ...column,
-        tasks: tasks.filter((task) => task.boardColumn === column.id),
+        title: columnLabels[column.id],
+        tasks: visibleTasks.filter((task) => task.boardColumn === column.id),
       })),
-    [tasks]
+    [columnLabels, visibleTasks]
   )
 
   const draggedTask = useMemo(
-    () => (activeDrag ? tasks.find((task) => task.id === activeDrag.taskId) ?? null : null),
-    [activeDrag, tasks]
+    () => (activeDrag ? visibleTasks.find((task) => task.id === activeDrag.taskId) ?? null : null),
+    [activeDrag, visibleTasks]
   )
+  const targetColumnLabel = tasksByColumn.find((column) => column.id === targetColumn)?.title ?? "board"
 
   useEffect(() => {
+    setRevealedTaskId(null)
+  }, [currentDateKey, isMobile])
+
+  useEffect(() => {
+    if (isMobile) {
+      return
+    }
+
     const cleanupStyles = () => {
       document.body.style.userSelect = ""
       document.body.style.cursor = ""
@@ -287,45 +532,51 @@ export default function KanbanPage() {
       window.removeEventListener("pointercancel", cancelDrag)
       cleanupStyles()
     }
-  }, [moveTaskToColumn])
+  }, [isMobile, moveTaskToColumn])
 
   return (
-    <div className="h-full px-4 py-6 pb-24 lg:px-8 lg:pb-6">
+    <div className="flex h-[calc(100dvh-4rem)] min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden px-4 py-5 pb-[calc(5.5rem+env(safe-area-inset-bottom))] lg:px-8 lg:py-6 lg:pb-6">
       <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="flex items-center gap-3 text-2xl font-semibold text-foreground">
             <LayoutGrid className="h-7 w-7" />
             Kanban Board
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">Drag tasks between columns to update the flow.</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Drag tasks planned for {viewingToday ? "today" : formatLongDateLabel(currentDateKey)} between columns.
+          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center rounded-lg bg-muted p-1">
-            <button
-              onClick={() => setCompactView(false)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                !compactView ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
-              )}
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          <div className="flex items-center justify-between gap-2 sm:justify-start">
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border"
+              onClick={() => setCurrentDate((date) => addDays(date, -1))}
+              aria-label="Previous day"
             >
-              Expanded
-            </button>
-            <button
-              onClick={() => setCompactView(true)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                compactView ? "bg-card text-foreground shadow-sm" : "text-muted-foreground"
-              )}
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="min-w-0 flex-1 rounded-lg border border-border bg-card px-4 py-2 text-center sm:min-w-[220px] sm:flex-none">
+              <span className="font-medium text-foreground">{formatLongDateLabel(currentDateKey)}</span>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="border-border"
+              onClick={() => setCurrentDate((date) => addDays(date, 1))}
+              aria-label="Next day"
             >
-              Compact
-            </button>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
           </div>
         </div>
       </div>
 
-      <div className="-mx-4 overflow-x-auto px-4 pb-4 lg:mx-0 lg:px-0">
-        <div className="flex gap-4 snap-x snap-mandatory">
+      <div className="min-h-0 w-full min-w-0 max-w-full flex-1 overflow-hidden rounded-2xl border border-border bg-card/45 shadow-[0_30px_90px_-60px_rgba(28,28,28,0.45)] sm:rounded-[1.75rem]">
+        <div className="h-full w-full overflow-x-auto overflow-y-auto overscroll-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [-webkit-overflow-scrolling:touch] p-3 sm:p-4">
+          <div className="flex min-h-full w-max min-w-full snap-x snap-mandatory gap-3 sm:gap-4 md:snap-none">
           {tasksByColumn.map((column) => {
             const isActiveDropZone = hoverColumn === column.id
 
@@ -333,7 +584,7 @@ export default function KanbanPage() {
               <section
                 key={column.id}
                 data-kanban-column-id={column.id}
-                className="w-[84vw] max-w-sm flex-shrink-0 snap-start md:w-80"
+                className="flex w-[84vw] max-w-[19rem] flex-shrink-0 snap-start flex-col sm:w-[18rem] md:w-80 lg:w-[20rem]"
               >
                 <div
                   className={cn(
@@ -348,9 +599,27 @@ export default function KanbanPage() {
                         {column.tasks.length}
                       </span>
                     </div>
-                    <button className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-44">
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setTargetColumn(column.id)
+                            setAddTaskOpen(true)
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add task
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setCompactView((current) => !current)}>
+                          {compactView ? "Switch to expanded" : "Switch to compact"}
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                   {isActiveDropZone && (
                     <p className="mt-2 text-xs text-muted-foreground">Release to move here</p>
@@ -359,7 +628,7 @@ export default function KanbanPage() {
 
                 <div
                   className={cn(
-                    "min-h-[420px] rounded-b-xl border border-t-0 border-border bg-card p-3 transition-colors",
+                    "min-h-[420px] flex-1 rounded-b-xl border border-t-0 border-border bg-card p-3 transition-colors",
                     isActiveDropZone && "border-primary/50 bg-accent/60"
                   )}
                 >
@@ -371,8 +640,15 @@ export default function KanbanPage() {
                         columnId={column.id}
                         compactView={compactView}
                         lists={lists}
+                        isMobile={isMobile}
+                        revealed={revealedTaskId === task.id}
                         isDragging={activeDrag?.taskId === task.id}
+                        columnLabels={columnLabels}
                         onDragStart={(event: ReactPointerEvent<HTMLDivElement>) => {
+                          if (isMobile) {
+                            return
+                          }
+
                           if (event.button !== 0) {
                             return
                           }
@@ -398,6 +674,11 @@ export default function KanbanPage() {
 
                           cardElement.setPointerCapture(event.pointerId)
                         }}
+                        onRevealChange={(open) =>
+                          setRevealedTaskId((current) => (open ? task.id : current === task.id ? null : current))
+                        }
+                        onEditTask={() => setEditingTask(task)}
+                        onMoveTask={(nextColumn) => moveTaskToColumn(task.id, nextColumn)}
                       />
                     ))}
 
@@ -408,25 +689,18 @@ export default function KanbanPage() {
                           isActiveDropZone && "border-primary/50 bg-background"
                         )}
                       >
-                        <p>No tasks</p>
-                        <p className="mt-1 text-xs">Drag a card here or add a new one.</p>
+                        <p>No tasks for this stage</p>
+                        <p className="mt-1 text-xs">
+                          Nothing from {viewingToday ? "today" : formatLongDateLabel(currentDateKey)} is sitting here yet.
+                        </p>
                       </div>
                     )}
-
-                    <button
-                      className="w-full rounded-lg border-2 border-dashed border-border p-3 text-sm text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-                      onClick={() => {
-                        setTargetColumn(column.id)
-                        setAddTaskOpen(true)
-                      }}
-                    >
-                      Add Task
-                    </button>
                   </div>
                 </div>
               </section>
             )
           })}
+          </div>
         </div>
       </div>
 
@@ -443,6 +717,13 @@ export default function KanbanPage() {
             columnId={activeDrag.columnId}
             compactView={compactView}
             lists={lists}
+            isMobile={false}
+            revealed={false}
+            columnLabels={columnLabels}
+            showQuickActions={false}
+            onRevealChange={() => undefined}
+            onEditTask={() => undefined}
+            onMoveTask={() => undefined}
           />
         </div>
       ) : null}
@@ -451,8 +732,19 @@ export default function KanbanPage() {
         open={addTaskOpen}
         onOpenChange={setAddTaskOpen}
         defaultBoardColumn={targetColumn}
-        title={`Add task to ${columns.find((column) => column.id === targetColumn)?.title ?? "board"}`}
-        description="Create a task directly in this workflow stage."
+        defaultPlannedDate={currentDateKey}
+        title={`Add task to ${targetColumnLabel}`}
+        description={`Create a task for ${viewingToday ? "today" : formatLongDateLabel(currentDateKey)} directly in this workflow stage.`}
+      />
+
+      <TaskEditorDialog
+        task={editingTask}
+        open={Boolean(editingTask)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEditingTask(null)
+          }
+        }}
       />
     </div>
   )

@@ -148,7 +148,7 @@ export default function CapturePage() {
           listId: task.suggestedListId === LIFE_LIST_ID ? lifeListId ?? "" : task.suggestedListId,
           plannedDate: task.suggestedDate,
           dueDate: task.suggestedDate,
-          boardColumn: task.suggestedDate === todayKey ? "today" : "waiting",
+          boardColumn: "today",
           source: "image",
           priority: "none",
         })
