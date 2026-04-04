@@ -72,9 +72,7 @@ type ActiveDragState = {
   height: number
 }
 
-const mobileQuickActionOrder: BoardColumn[] = ["today", "doing", "done", "inbox"]
 const desktopQuickActionOrder: BoardColumn[] = ["today", "doing", "done", "inbox"]
-const MOBILE_SWIPE_REVEAL = 184
 
 function getColumnAtPoint(x: number, y: number) {
   const target = document.elementFromPoint(x, y)
@@ -132,134 +130,36 @@ function TaskCard({
   onMoveTask: (columnId: BoardColumn) => void
 }) {
   const isOverdue = Boolean(task.dueDate && !task.completed && getDaysOverdue(task.dueDate) > 0)
-  const mobileQuickActionColumns = mobileQuickActionOrder.filter((value) => value !== columnId)
   const desktopQuickActionColumns = desktopQuickActionOrder.filter((value) => value !== columnId)
-  const [swipeOffset, setSwipeOffset] = useState(0)
-  const swipeGestureRef = useRef<{
-    pointerId: number
-    startX: number
-    startY: number
-    baseOffset: number
-    lock: "pending" | "horizontal" | "vertical"
-  } | null>(null)
-
-  useEffect(() => {
-    if (!isMobile || !showQuickActions) {
-      setSwipeOffset(0)
-      return
-    }
-
-    setSwipeOffset(revealed ? -MOBILE_SWIPE_REVEAL : 0)
-  }, [isMobile, revealed, showQuickActions])
 
   const runTaskAction = (action: () => void) => {
     if (isMobile) {
       onRevealChange(false)
-      setSwipeOffset(0)
     }
 
     action()
   }
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!isMobile || !showQuickActions || event.pointerType === "mouse") {
+    if (!isMobile) {
       onDragStart?.(event)
-      return
-    }
-
-    event.currentTarget.setPointerCapture(event.pointerId)
-    swipeGestureRef.current = {
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      baseOffset: revealed ? -MOBILE_SWIPE_REVEAL : 0,
-      lock: "pending",
     }
   }
 
-  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const gesture = swipeGestureRef.current
-    if (!isMobile || !gesture || gesture.pointerId !== event.pointerId) {
+  const handleCardClick = () => {
+    if (!isMobile || !showQuickActions) {
       return
     }
 
-    const movedX = event.clientX - gesture.startX
-    const movedY = event.clientY - gesture.startY
-
-    if (gesture.lock === "pending") {
-      if (Math.abs(movedX) < 8 && Math.abs(movedY) < 8) {
-        return
-      }
-
-      gesture.lock = Math.abs(movedX) > Math.abs(movedY) ? "horizontal" : "vertical"
-    }
-
-    if (gesture.lock !== "horizontal") {
-      return
-    }
-
-    event.preventDefault()
-    const nextOffset = Math.max(-MOBILE_SWIPE_REVEAL, Math.min(0, gesture.baseOffset + movedX))
-    setSwipeOffset(nextOffset)
-  }
-
-  const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const gesture = swipeGestureRef.current
-    if (!isMobile || !gesture || gesture.pointerId !== event.pointerId) {
-      return
-    }
-
-    const shouldReveal = gesture.lock === "horizontal" ? swipeOffset <= -MOBILE_SWIPE_REVEAL * 0.45 : !revealed
-    const nextRevealed = gesture.lock === "horizontal" ? shouldReveal : revealed
-
-    setSwipeOffset(nextRevealed ? -MOBILE_SWIPE_REVEAL : 0)
-    onRevealChange(nextRevealed)
-    swipeGestureRef.current = null
+    onRevealChange(!revealed)
   }
 
   return (
     <div className="relative overflow-hidden rounded-xl">
-      {isMobile && showQuickActions ? (
-        <div
-          onPointerDown={(event) => event.stopPropagation()}
-          className="absolute inset-y-0 right-0 flex w-[11.5rem] flex-col justify-between rounded-xl border border-border bg-muted/65 p-3"
-        >
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className="rounded-xl border border-foreground/10 bg-background/95 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:bg-background"
-              onClick={(event) => {
-                event.stopPropagation()
-                runTaskAction(onEditTask)
-              }}
-            >
-              Edit
-            </button>
-
-            {mobileQuickActionColumns.map((nextColumn) => (
-              <button
-                key={nextColumn}
-                type="button"
-                className="rounded-xl border border-foreground/10 bg-background/95 px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  runTaskAction(() => onMoveTask(nextColumn))
-                }}
-              >
-                {columnLabels[nextColumn]}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
       <div
         data-slot="task-card"
         onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerEnd}
-        onPointerCancel={handlePointerEnd}
-        style={isMobile ? { transform: `translateX(${swipeOffset}px)` } : undefined}
+        onClick={handleCardClick}
         className={cn(
           "group relative cursor-grab touch-pan-y rounded-xl border border-border bg-background p-4 shadow-sm transition-all active:cursor-grabbing md:touch-none",
           isOverdue && "border-destructive/30",
@@ -317,10 +217,15 @@ function TaskCard({
             </div>
           )}
 
-          {!isMobile && showQuickActions ? (
+          {showQuickActions ? (
             <div
               className={cn(
-                "pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl p-4 opacity-0 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100"
+                "pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl p-4 transition-opacity duration-200",
+                isMobile
+                  ? revealed
+                    ? "opacity-100"
+                    : "opacity-0"
+                  : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
               )}
             >
               <div
@@ -330,6 +235,7 @@ function TaskCard({
               />
               <div
                 onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
                 className="pointer-events-auto relative flex w-full flex-nowrap items-center justify-center gap-1.5"
               >
                 {desktopQuickActionColumns.map((nextColumn) => (
@@ -337,9 +243,7 @@ function TaskCard({
                     key={nextColumn}
                     type="button"
                     aria-label={`Move ${task.title} to ${columnLabels[nextColumn]}`}
-                    className={cn(
-                      "inline-flex min-w-0 flex-1 items-center justify-center rounded-full border border-foreground/10 bg-background/95 px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-background hover:text-foreground"
-                    )}
+                    className="inline-flex min-w-0 flex-1 items-center justify-center rounded-full border border-foreground/10 bg-background/95 px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:border-foreground/20 hover:bg-background hover:text-foreground"
                     onClick={(event) => {
                       event.stopPropagation()
                       runTaskAction(() => onMoveTask(nextColumn))

@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react"
 
 import { format } from "date-fns"
-import { Brain, Clock, Coffee, Users, X } from "lucide-react"
+import { Brain, Clock, Coffee, Pencil, Users, X } from "lucide-react"
 
+import { useIsMobile } from "@/hooks/use-mobile"
 import { formatTimeLabel, type ScheduleBlock } from "@/lib/tasked-store"
 
 const DEFAULT_ROW_HEIGHT = 64
@@ -61,6 +62,7 @@ export function buildCompactHours(currentHour: number) {
 
 type DayTimelineProps = {
   blocks: ScheduleBlock[]
+  taskListNameById?: Record<string, string>
   hours: number[]
   now: Date
   showCurrentTime: boolean
@@ -69,12 +71,13 @@ type DayTimelineProps = {
   autoScroll?: boolean
   fillParent?: boolean
   onDropTaskAtTime?: (taskId: string, startTime: string) => void
-  onUnscheduleTask?: (taskId: string) => void
+  onEditScheduledTask?: (block: ScheduleBlock) => void
   onDeleteBlock?: (blockId: string) => void
 }
 
 export function DayTimeline({
   blocks,
+  taskListNameById,
   hours,
   now,
   showCurrentTime,
@@ -83,12 +86,14 @@ export function DayTimeline({
   autoScroll = false,
   fillParent = false,
   onDropTaskAtTime,
-  onUnscheduleTask,
+  onEditScheduledTask,
   onDeleteBlock,
 }: DayTimelineProps) {
+  const isMobile = useIsMobile()
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const contentRef = useRef<HTMLDivElement | null>(null)
   const [dropPreviewMinutes, setDropPreviewMinutes] = useState<number | null>(null)
+  const [revealedBlockId, setRevealedBlockId] = useState<string | null>(null)
   const visibleStartHour = hours[0] ?? 0
   const visibleEndHour = hours[hours.length - 1] ?? 23
   const visibleStartMinutes = visibleStartHour * 60
@@ -125,6 +130,17 @@ export function DayTimeline({
       behavior: "smooth",
     })
   }, [autoScroll, blocks, currentOffset, visibleStartMinutes])
+
+  useEffect(() => {
+    if (!isMobile) {
+      setRevealedBlockId(null)
+      return
+    }
+
+    setRevealedBlockId((current) =>
+      current && blocks.some((block) => block.id === current) ? current : null
+    )
+  }, [blocks, isMobile])
 
   const getDropMinutesFromClientY = (clientY: number) => {
     if (!scrollRef.current || !contentRef.current) {
@@ -229,35 +245,70 @@ export function DayTimeline({
                   ((Math.min(endMinutes, visibleEndMinutes) - Math.max(startMinutes, visibleStartMinutes)) /
                     60) *
                   DEFAULT_ROW_HEIGHT
+                const blockHeight = Math.max(height, 36)
                 const Icon = getBlockIcon(block.type)
+                const timeLabel = `${formatTimeLabel(block.startTime)} - ${formatTimeLabel(block.endTime)}`
+                const listLabel = block.taskId ? taskListNameById?.[block.taskId] : null
+                const supportsInlineEdit = Boolean(block.taskId && onEditScheduledTask)
+                const inlineEditVisible = supportsInlineEdit && isMobile && revealedBlockId === block.id
 
                 return (
                   <div
                     key={block.id}
-                    className={`absolute left-0 right-0 rounded-lg border p-3 shadow-sm ${getBlockTone(block.type)}`}
-                    style={{ top: `${top}px`, height: `${Math.max(height, 36)}px` }}
+                    className={`group/block absolute left-0 right-0 overflow-hidden rounded-lg border px-3 py-2 shadow-sm ${getBlockTone(block.type)}`}
+                    style={{ top: `${top}px`, height: `${blockHeight}px` }}
+                    onClick={() => {
+                      if (!isMobile || !supportsInlineEdit) {
+                        return
+                      }
+
+                      setRevealedBlockId((current) => (current === block.id ? null : block.id))
+                    }}
                   >
-                    <div className="flex items-start gap-2">
-                      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-foreground/70" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-foreground">{block.title}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {formatTimeLabel(block.startTime)} - {formatTimeLabel(block.endTime)}
+                    <div className="flex h-full min-w-0 items-center gap-2">
+                      <Icon className="h-4 w-4 shrink-0 text-foreground/70" />
+                      <div className="min-w-0 flex flex-1 items-center gap-2 overflow-hidden">
+                        <div className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                          {block.title}
+                        </div>
+                        <div
+                          className={`flex shrink-0 items-center gap-2 overflow-hidden transition-transform duration-200 ${
+                            supportsInlineEdit ? "group-hover/block:-translate-x-8" : ""
+                          } ${inlineEditVisible ? "-translate-x-8" : ""}`}
+                        >
+                          {listLabel ? (
+                            <span className="max-w-[6.5rem] truncate rounded-full bg-background/65 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                              {listLabel}
+                            </span>
+                          ) : null}
+                          <div className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+                            {timeLabel}
+                          </div>
                         </div>
                       </div>
-                      {block.taskId && onUnscheduleTask ? (
+                      {supportsInlineEdit ? (
                         <button
-                          onClick={() => onUnscheduleTask(block.taskId!)}
-                          className="rounded p-1 text-muted-foreground hover:text-foreground"
-                          aria-label="Unschedule task"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            onEditScheduledTask?.(block)
+                            setRevealedBlockId(null)
+                          }}
+                          className={`absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-all duration-200 hover:text-foreground ${
+                            isMobile
+                              ? inlineEditVisible
+                                ? "translate-x-0 opacity-100"
+                                : "pointer-events-none translate-x-1 opacity-0"
+                              : "translate-x-1 opacity-0 group-hover/block:translate-x-0 group-hover/block:opacity-100"
+                          }`}
+                          aria-label="Edit scheduled time"
                         >
-                          <X className="h-4 w-4" />
+                          <Pencil className="h-4 w-4" />
                         </button>
                       ) : null}
                       {!block.taskId && onDeleteBlock ? (
                         <button
                           onClick={() => onDeleteBlock(block.id)}
-                          className="rounded p-1 text-muted-foreground hover:text-foreground"
+                          className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground"
                           aria-label="Remove block"
                         >
                           <X className="h-4 w-4" />

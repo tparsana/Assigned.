@@ -21,9 +21,11 @@ import {
   formatLongDateLabel,
   formatTaskDateLabel,
   getScheduledBlocksForDate,
+  getTaskListName,
   getUnscheduledTasksForDate,
   useTaskedState,
   type BlockType,
+  type ScheduleBlock,
   type Task,
 } from "@/lib/tasked-store"
 
@@ -47,13 +49,29 @@ function getDefaultStartTime(currentDateKey: string) {
   return `${String(rounded.getHours()).padStart(2, "0")}:${String(rounded.getMinutes()).padStart(2, "0")}`
 }
 
+function addMinutesToTime(startTime: string, minutesToAdd: number) {
+  const [hours, minutes] = startTime.split(":").map(Number)
+  const totalMinutes = hours * 60 + minutes + minutesToAdd
+  const nextHours = Math.floor(totalMinutes / 60)
+  const nextMinutes = totalMinutes % 60
+
+  return `${String(nextHours).padStart(2, "0")}:${String(nextMinutes).padStart(2, "0")}`
+}
+
+function getBlockDurationMinutes(block: ScheduleBlock) {
+  const [startHours, startMinutes] = block.startTime.split(":").map(Number)
+  const [endHours, endMinutes] = block.endTime.split(":").map(Number)
+  return endHours * 60 + endMinutes - (startHours * 60 + startMinutes)
+}
+
 export default function CalendarPage() {
-  const { tasks, scheduleBlocks, scheduleTask, unscheduleTask, deleteScheduleBlock } = useTaskedState()
+  const { tasks, lists, scheduleBlocks, scheduleTask, deleteScheduleBlock } = useTaskedState()
 
   const [view, setView] = useState<ViewMode>("day")
   const [currentDate, setCurrentDate] = useState(new Date())
   const [addTaskOpen, setAddTaskOpen] = useState(false)
   const [taskToSchedule, setTaskToSchedule] = useState<Task | null>(null)
+  const [editingBlock, setEditingBlock] = useState<ScheduleBlock | null>(null)
   const [scheduleStartTime, setScheduleStartTime] = useState("09:00")
   const [scheduleType, setScheduleType] = useState<BlockType>("focus")
 
@@ -67,16 +85,29 @@ export default function CalendarPage() {
     () => getUnscheduledTasksForDate(tasks, scheduleBlocks, currentDateKey),
     [currentDateKey, scheduleBlocks, tasks]
   )
+  const taskListNameById = useMemo(
+    () =>
+      Object.fromEntries(
+        tasks.map((task) => [task.id, getTaskListName(lists, task.listId)])
+      ),
+    [lists, tasks]
+  )
+  const taskById = useMemo(
+    () => Object.fromEntries(tasks.map((task) => [task.id, task])),
+    [tasks]
+  )
   const weekDays = Array.from({ length: 7 }, (_, index) => addDays(currentDate, index))
 
-  const openScheduleDialog = (task: Task, preferredStartTime?: string) => {
+  const openScheduleDialog = (task: Task, preferredStartTime?: string, block?: ScheduleBlock) => {
     setTaskToSchedule(task)
     setScheduleStartTime(preferredStartTime ?? getDefaultStartTime(currentDateKey))
-    setScheduleType("focus")
+    setScheduleType(block?.type ?? "focus")
+    setEditingBlock(block ?? null)
   }
 
   const closeScheduleDialog = () => {
     setTaskToSchedule(null)
+    setEditingBlock(null)
     setScheduleStartTime("09:00")
     setScheduleType("focus")
   }
@@ -86,9 +117,12 @@ export default function CalendarPage() {
       return
     }
 
+    const blockDuration = editingBlock ? getBlockDurationMinutes(editingBlock) : null
+
     scheduleTask(taskToSchedule.id, {
-      date: currentDateKey,
+      date: editingBlock?.date ?? currentDateKey,
       startTime: scheduleStartTime,
+      endTime: blockDuration ? addMinutesToTime(scheduleStartTime, blockDuration) : undefined,
       type: scheduleType,
     })
     closeScheduleDialog()
@@ -100,6 +134,19 @@ export default function CalendarPage() {
       startTime,
       type: "focus",
     })
+  }
+
+  const handleEditScheduledBlock = (block: ScheduleBlock) => {
+    if (!block.taskId) {
+      return
+    }
+
+    const task = taskById[block.taskId]
+    if (!task) {
+      return
+    }
+
+    openScheduleDialog(task, block.startTime, block)
   }
 
   return (
@@ -231,6 +278,7 @@ export default function CalendarPage() {
               <div className="min-h-0 flex-1">
                 <DayTimeline
                   blocks={dayBlocks}
+                  taskListNameById={taskListNameById}
                   hours={DAY_HOURS}
                   now={now}
                   showCurrentTime={format(now, "yyyy-MM-dd") === currentDateKey}
@@ -238,7 +286,7 @@ export default function CalendarPage() {
                   autoScroll
                   fillParent
                   onDropTaskAtTime={handleDropTaskAtTime}
-                  onUnscheduleTask={unscheduleTask}
+                  onEditScheduledTask={handleEditScheduledBlock}
                   onDeleteBlock={deleteScheduleBlock}
                 />
               </div>
@@ -296,10 +344,10 @@ export default function CalendarPage() {
       <Dialog open={Boolean(taskToSchedule)} onOpenChange={(open) => !open && closeScheduleDialog()}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Schedule task</DialogTitle>
+            <DialogTitle>{editingBlock ? "Edit scheduled time" : "Schedule task"}</DialogTitle>
             <DialogDescription>
-              Place {taskToSchedule?.title ? `"${taskToSchedule.title}"` : "this task"} at a specific time on{" "}
-              {formatLongDateLabel(currentDateKey)}.
+              {editingBlock ? "Move" : "Place"} {taskToSchedule?.title ? `"${taskToSchedule.title}"` : "this task"} at a specific time on{" "}
+              {formatLongDateLabel(editingBlock?.date ?? currentDateKey)}.
             </DialogDescription>
           </DialogHeader>
 
@@ -333,7 +381,7 @@ export default function CalendarPage() {
             <Button variant="ghost" onClick={closeScheduleDialog}>
               Cancel
             </Button>
-            <Button onClick={confirmScheduleTask}>Schedule</Button>
+            <Button onClick={confirmScheduleTask}>{editingBlock ? "Save changes" : "Schedule"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
