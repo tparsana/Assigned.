@@ -42,9 +42,13 @@ import {
 
 type TeamMemberProfilePageProps = {
   memberId: string
+  initialDetail?: TeamMemberProfileData | null
 }
 
-export function TeamMemberProfilePage({ memberId }: TeamMemberProfilePageProps) {
+export function TeamMemberProfilePage({
+  memberId,
+  initialDetail = null,
+}: TeamMemberProfilePageProps) {
   const {
     viewer,
     teams,
@@ -59,13 +63,34 @@ export function TeamMemberProfilePage({ memberId }: TeamMemberProfilePageProps) 
   const router = useRouter()
   const [activeTab, setActiveTab] = useState("overview")
   const [editOpen, setEditOpen] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialDetail)
   const [error, setError] = useState<string | null>(null)
-  const [detail, setDetail] = useState<TeamMemberProfileData | null>(null)
-  const [draft, setDraft] = useState<TeamUserDraft>(getDefaultUserDraft())
+  const [detail, setDetail] = useState<TeamMemberProfileData | null>(initialDetail)
+  const [draft, setDraft] = useState<TeamUserDraft>(
+    initialDetail
+      ? getDefaultUserDraft({
+          fullName: initialDetail.member.fullName,
+          email: initialDetail.member.email ?? "",
+          phone: initialDetail.member.phone ?? "",
+          avatarUrl: initialDetail.member.avatarUrl ?? "",
+          accessLevel: initialDetail.member.accessLevel,
+          teamId: initialDetail.member.teamId,
+          positionId: initialDetail.member.positionId,
+          managerUserId: initialDetail.member.managerUserId,
+          projectIds: initialDetail.member.projectIds,
+          primaryProjectId: initialDetail.member.primaryProjectId,
+          availability: initialDetail.member.availability,
+          status: initialDetail.member.status,
+        })
+      : getDefaultUserDraft()
+  )
   const [isDeletingUser, setIsDeletingUser] = useState(false)
 
   useEffect(() => {
+    if (initialDetail) {
+      return
+    }
+
     let active = true
 
     void (async () => {
@@ -104,7 +129,7 @@ export function TeamMemberProfilePage({ memberId }: TeamMemberProfilePageProps) 
     return () => {
       active = false
     }
-  }, [getDefaultUserDraft, loadMemberProfile, memberId])
+  }, [getDefaultUserDraft, initialDetail, loadMemberProfile, memberId])
 
   const member = detail?.member ?? null
   const team = member ? teams.find((entry) => entry.id === member.teamId) ?? null : null

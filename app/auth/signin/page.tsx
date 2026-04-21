@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation"
 
 import { SignInForm } from "@/components/auth/sign-in-form"
+import { getAssignedHomePath } from "@/lib/assigned-navigation"
+import { getAssignedAccessContext } from "@/lib/server/assigned-access"
 import { getCurrentUserAccess } from "@/lib/supabase/access"
 import { createClient } from "@/lib/supabase/server"
 
@@ -17,7 +19,12 @@ export default async function SignInPage({
 
   if (user) {
     const { profile } = await getCurrentUserAccess(supabase, user)
-    redirect(profile?.onboarding_completed ? "/app" : "/onboarding")
+    if (!profile?.onboarding_completed) {
+      redirect("/onboarding")
+    }
+
+    const access = await getAssignedAccessContext(user)
+    redirect(getAssignedHomePath(access.accessLevel))
   }
 
   return <SignInForm message={error} />

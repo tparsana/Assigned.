@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo, useState } from "react"
 import { Search, Plus } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -88,6 +89,8 @@ export function DashboardPageView({ data }: { data: TaskBoardData }) {
       ) as Record<TaskSummary["status"], TaskSummary[]>,
     [filteredTasks]
   )
+
+  const showScopedEmptyState = data.tasks.length === 0
 
   const handleMoveTask = async (taskId: string, status: TaskSummary["status"]) => {
     setMovingTaskId(taskId)
@@ -222,48 +225,76 @@ export function DashboardPageView({ data }: { data: TaskBoardData }) {
           </div>
         </div>
 
-        <div className="grid gap-5 xl:grid-cols-4">
-          {boardColumns.map((column) => (
-            <div
-              key={column.id}
-              className="rounded-[32px] border border-border/80 bg-card p-4"
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                const taskId = event.dataTransfer.getData("text/task-id")
-                if (!taskId) {
-                  return
-                }
-
-                void handleMoveTask(taskId, column.id)
-              }}
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <div className="text-sm font-medium text-foreground">{column.title}</div>
-                <div className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
-                  {columnTasks[column.id]?.length ?? 0}
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {(columnTasks[column.id] ?? []).map((task) => (
-                  <div
-                    key={task.id}
-                    draggable
-                    onDragStart={(event) => event.dataTransfer.setData("text/task-id", task.id)}
-                    className={movingTaskId === task.id ? "opacity-50" : ""}
-                  >
-                    <TaskCard task={task} compact />
-                  </div>
-                ))}
-                {(columnTasks[column.id] ?? []).length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-border bg-background/80 px-4 py-8 text-center text-sm text-muted-foreground">
-                    No tasks in {column.title.toLowerCase()}.
-                  </div>
-                ) : null}
+        {showScopedEmptyState ? (
+          <div className="rounded-[32px] border border-dashed border-border bg-card px-6 py-12">
+            <div className="mx-auto max-w-2xl text-center">
+              <div className="text-sm uppercase tracking-[0.24em] text-muted-foreground">Team Scope</div>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
+                {data.viewer.accessLevel === "team_lead"
+                  ? "No active tasks in your team scope yet."
+                  : "No active tasks in the workspace yet."}
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                Start by creating the first task, then use the board to manage flow across owners, categories, and projects.
+              </p>
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <Button onClick={() => setCreateOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create task
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link href="/app/my-tasks">Open My Tasks</Link>
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link href="/app/team">View Team</Link>
+                </Button>
               </div>
             </div>
-          ))}
-        </div>
+          </div>
+        ) : (
+          <div className="grid gap-5 xl:grid-cols-4">
+            {boardColumns.map((column) => (
+              <div
+                key={column.id}
+                className="rounded-[32px] border border-border/80 bg-card p-4"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  const taskId = event.dataTransfer.getData("text/task-id")
+                  if (!taskId) {
+                    return
+                  }
+
+                  void handleMoveTask(taskId, column.id)
+                }}
+              >
+                <div className="mb-4 flex items-center justify-between">
+                  <div className="text-sm font-medium text-foreground">{column.title}</div>
+                  <div className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                    {columnTasks[column.id]?.length ?? 0}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {(columnTasks[column.id] ?? []).map((task) => (
+                    <div
+                      key={task.id}
+                      draggable
+                      onDragStart={(event) => event.dataTransfer.setData("text/task-id", task.id)}
+                      className={movingTaskId === task.id ? "opacity-50" : ""}
+                    >
+                      <TaskCard task={task} compact />
+                    </div>
+                  ))}
+                  {(columnTasks[column.id] ?? []).length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-border bg-background/80 px-4 py-8 text-center text-sm text-muted-foreground">
+                      No tasks in {column.title.toLowerCase()}.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <AddTaskDialog

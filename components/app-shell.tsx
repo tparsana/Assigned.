@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 
 import { AddTaskDialog } from "@/components/add-task-dialog"
+import { useAssignedAccess } from "@/components/assigned-access-provider"
 import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,6 +17,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { createClient } from "@/lib/supabase/client"
+import {
+  ASSIGNED_DASHBOARD_PATH,
+  ASSIGNED_MY_TASKS_PATH,
+  canAccessAssignedDashboard,
+  getAssignedHomePath,
+} from "@/lib/assigned-navigation"
 import {
   formatPomodoroClock,
   getPomodoroModeLabel,
@@ -39,8 +46,8 @@ import {
 } from "lucide-react"
 
 const sidebarItems = [
-  { href: "/app", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/app/my-tasks", label: "My Tasks", icon: CheckSquare },
+  { href: ASSIGNED_DASHBOARD_PATH, label: "Dashboard", icon: LayoutDashboard, requiresDashboard: true },
+  { href: ASSIGNED_MY_TASKS_PATH, label: "My Tasks", icon: CheckSquare },
   { href: "/app/projects", label: "Projects", icon: BriefcaseBusiness },
   { href: "/app/team", label: "Team", icon: Users },
   { href: "/app/calendar", label: "Calendar", icon: Calendar },
@@ -59,6 +66,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const { accessLevel } = useAssignedAccess()
   const { profile, preferences, todayKey, hydrated, pomodoro } = useAssignedState()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
@@ -67,6 +75,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [timerNow, setTimerNow] = useState(() => Date.now())
   const isMinimalMode = hydrated && preferences.minimalMode
   const isFocusPage = pathname === "/app/focus"
+  const homePath = getAssignedHomePath(accessLevel)
+  const hasDashboardAccess = canAccessAssignedDashboard(accessLevel)
+  const visibleSidebarItems = sidebarItems.filter((item) => !item.requiresDashboard || hasDashboardAccess)
 
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -87,10 +98,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return
     }
 
-    if (pathname !== "/app" && pathname !== "/app/settings" && pathname !== "/app/capture") {
-      router.replace("/app")
+    if (pathname !== homePath && pathname !== "/app/settings" && pathname !== "/app/capture") {
+      router.replace(homePath)
     }
-  }, [isMinimalMode, pathname, router])
+  }, [homePath, isMinimalMode, pathname, router])
 
   useEffect(() => {
     if (pomodoro.status !== "running") {
@@ -103,7 +114,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.clearInterval(interval)
   }, [pomodoro.status])
 
-  const topBarMessage = pathname === "/app" ? motivationalQuotes[quoteIndex] : today
+  const topBarMessage = pathname === ASSIGNED_DASHBOARD_PATH ? motivationalQuotes[quoteIndex] : today
   const initials = `${profile.firstName?.[0] ?? "U"}${profile.lastName?.[0] ?? ""}`.trim()
   const minimalHeading =
     pathname === "/app/settings"
@@ -198,12 +209,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {!isMinimalMode && (
       <aside className="hidden lg:flex flex-col w-64 bg-sidebar border-r border-sidebar-border">
         <div className="p-6">
-          <BrandMark href="/app" className="text-2xl text-sidebar-foreground" />
+          <BrandMark href={homePath} className="text-2xl text-sidebar-foreground" />
         </div>
 
         <nav className="flex-1 px-4 space-y-1">
-          {sidebarItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/app" && pathname.startsWith(item.href))
+          {visibleSidebarItems.map((item) => {
+            const isActive = pathname === item.href || (item.href !== ASSIGNED_DASHBOARD_PATH && pathname.startsWith(item.href))
             return (
               <Link
                 key={item.href}
@@ -237,14 +248,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
           <aside className="relative w-72 bg-sidebar flex flex-col">
             <div className="p-6 flex items-center justify-between">
-              <BrandMark href="/app" className="text-2xl text-sidebar-foreground" />
+              <BrandMark href={homePath} className="text-2xl text-sidebar-foreground" />
               <button onClick={() => setSidebarOpen(false)} className="text-sidebar-foreground">
                 <X className="w-6 h-6" />
               </button>
             </div>
             <nav className="flex-1 px-4 space-y-1">
-              {sidebarItems.map((item) => {
-                const isActive = pathname === item.href || (item.href !== "/app" && pathname.startsWith(item.href))
+              {visibleSidebarItems.map((item) => {
+                const isActive = pathname === item.href || (item.href !== ASSIGNED_DASHBOARD_PATH && pathname.startsWith(item.href))
                 return (
                   <Link
                     key={item.href}
@@ -280,7 +291,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </button>
               )}
               {isMinimalMode && (
-                <BrandMark href="/app" className="text-xl text-foreground" />
+                <BrandMark href={homePath} className="text-xl text-foreground" />
               )}
               <div className="min-w-0">
                 <div className="text-sm text-muted-foreground truncate">
@@ -292,9 +303,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-3">
               {isMinimalMode ? (
                 <>
-                  {pathname !== "/app" ? (
+                  {pathname !== homePath ? (
                     <Button variant="outline" className="border-border" asChild>
-                      <Link href="/app">Back to Tasks</Link>
+                      <Link href={homePath}>Back to Tasks</Link>
                     </Button>
                   ) : null}
                 </>
@@ -345,8 +356,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border px-2 py-2 z-40">
           <div className="flex items-center justify-around">
             {[
-              { href: "/app", icon: LayoutDashboard, label: "Dashboard" },
-              { href: "/app/my-tasks", icon: CheckSquare, label: "My Tasks" },
+              ...(hasDashboardAccess ? [{ href: ASSIGNED_DASHBOARD_PATH, icon: LayoutDashboard, label: "Dashboard" }] : []),
+              { href: ASSIGNED_MY_TASKS_PATH, icon: CheckSquare, label: "My Tasks" },
               { href: "/app/projects", icon: BriefcaseBusiness, label: "Projects" },
               { href: "/app/calendar", icon: Calendar, label: "Calendar" },
             ].map((item) => {

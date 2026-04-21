@@ -61,15 +61,23 @@ async function readJson<T>(response: Response) {
   return (await response.json().catch(() => ({}))) as T
 }
 
-export function TeamDataProvider({ children }: { children: ReactNode }) {
-  const [workspace, setWorkspace] = useState<TeamWorkspaceData>({
-    viewer: emptyViewer,
-    teams: [],
-    positions: [],
-    projects: [],
-    members: [],
-  })
-  const [loading, setLoading] = useState(true)
+export function TeamDataProvider({
+  children,
+  initialData,
+}: {
+  children: ReactNode
+  initialData?: TeamWorkspaceData
+}) {
+  const [workspace, setWorkspace] = useState<TeamWorkspaceData>(
+    initialData ?? {
+      viewer: emptyViewer,
+      teams: [],
+      positions: [],
+      projects: [],
+      members: [],
+    }
+  )
+  const [loading, setLoading] = useState(!initialData)
   const [error, setError] = useState<string | null>(null)
 
   const refreshWorkspace = useCallback(async () => {
@@ -93,8 +101,12 @@ export function TeamDataProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
+    if (initialData) {
+      return
+    }
+
     void refreshWorkspace()
-  }, [refreshWorkspace])
+  }, [initialData, refreshWorkspace])
 
   const sendMutation = useCallback(
     async (input: {

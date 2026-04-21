@@ -9,12 +9,14 @@ import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { getAssignedHomePath } from "@/lib/assigned-navigation"
 
 export default function OnboardingPage() {
   const router = useRouter()
   const {
     loading,
     onboardingCompleted,
+    accessLevel,
     profile,
     completeOnboarding,
   } = useAssignedAccess()
@@ -34,9 +36,9 @@ export default function OnboardingPage() {
 
   useEffect(() => {
     if (!loading && onboardingCompleted) {
-      router.replace("/app")
+      router.replace(getAssignedHomePath(accessLevel))
     }
-  }, [loading, onboardingCompleted, router])
+  }, [accessLevel, loading, onboardingCompleted, router])
 
   const profileName = useMemo(
     () => `${firstName} ${lastName}`.trim(),
@@ -61,7 +63,7 @@ export default function OnboardingPage() {
       return
     }
 
-    router.replace("/app")
+    router.replace(getAssignedHomePath(accessLevel))
   }
 
   if (loading) {

@@ -37,7 +37,7 @@ const foundationItems = [
   },
   {
     title: "Keep it modular",
-    description: "The UI and config surface are being cleaned so Samaya-specific decisions can later become reusable product patterns.",
+    description: "The UI and config surface are being cleaned so branding, workflows, and permissions stay easy to adapt as the product grows.",
     icon: Building2,
   },
 ]
@@ -117,13 +117,13 @@ export default function LandingPage() {
           <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
             <div>
               <div className="inline-flex items-center rounded-full border border-border bg-background/85 px-4 py-2 text-sm text-muted-foreground shadow-sm">
-                Built first for {appConfig.companyName}. Structured to scale later.
+                Collaborative task assignment, planning, and follow-through.
               </div>
               <h1 className="mt-8 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-tight text-foreground md:text-7xl">
-                Assigned turns Samaya&apos;s daily work into a cleaner operating system.
+                Assigned gives teams one clear place to assign work, track progress, and stay aligned.
               </h1>
               <p className="mt-6 max-w-2xl text-lg text-muted-foreground md:text-xl">
-                This phase focuses on the foundation: better auth, cleaner data wiring, clearer brand language, and a modular UI that can grow into a collaborative construction workflow.
+                Assigned combines collaborative task management, personal execution views, team visibility, projects, and calendars in one workspace that stays clean, fast, and easy to extend.
               </p>
 
               <div className="mt-10 flex flex-col gap-4 sm:flex-row">
@@ -142,9 +142,9 @@ export default function LandingPage() {
 
               <div className="mt-8 flex flex-wrap gap-3 text-sm text-muted-foreground">
                 {[
-                  "Supabase-ready for the new Assigned project",
-                  "Google auth surface prepared",
-                  "Existing UI cleaned for future company templates",
+                  "Collaborative task assignment built in",
+                  "Project-linked work when you need it",
+                  "Clean, modular UI ready to evolve",
                 ].map((item) => (
                   <div key={item} className="rounded-full border border-border bg-background/80 px-4 py-2">
                     {item}
@@ -158,7 +158,7 @@ export default function LandingPage() {
               <div className="relative overflow-hidden rounded-[2rem] border border-border bg-card shadow-[0_25px_80px_rgba(28,28,28,0.08)]">
                 <div className="border-b border-border bg-background/75 px-6 py-4">
                   <div className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
-                    Samaya Workspace Snapshot
+                    Assigned Workspace Snapshot
                   </div>
                 </div>
                 <div className="grid gap-4 p-6">
@@ -169,9 +169,9 @@ export default function LandingPage() {
                     </div>
                     <div className="space-y-3">
                       {[
-                        "Confirm concrete delivery for Monday pour",
-                        "Review subcontractor paperwork",
-                        "Close out procurement follow-ups from Friday",
+                        "Confirm vendor delivery window for tomorrow",
+                        "Review team handoffs before the afternoon check-in",
+                        "Close pending approvals and unblock active work",
                       ].map((item, index) => (
                         <div key={item} className="flex items-start gap-3 rounded-xl bg-card px-3 py-3">
                           <div className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${index === 0 ? "border-herb bg-herb/10" : "border-border"}`}>
@@ -190,21 +190,21 @@ export default function LandingPage() {
                         <div className="text-sm font-medium text-foreground">Today&apos;s cadence</div>
                       </div>
                       <div className="space-y-2 text-sm text-foreground/80">
-                        <div>7:30 AM crew prep</div>
-                        <div>10:00 AM supplier calls</div>
-                        <div>2:00 PM site review</div>
+                        <div>9:00 AM planning review</div>
+                        <div>11:30 AM owner follow-ups</div>
+                        <div>4:00 PM progress check</div>
                       </div>
                     </div>
 
                     <div className="rounded-2xl border border-border bg-marigold/10 p-5">
                       <div className="mb-3 flex items-center gap-2">
                         <Building2 className="h-5 w-5 text-foreground" />
-                        <div className="text-sm font-medium text-foreground">Next phase</div>
+                        <div className="text-sm font-medium text-foreground">What stays connected</div>
                       </div>
                       <div className="space-y-2 text-sm text-foreground/80">
-                        <div>Assignment ownership</div>
-                        <div>Permissions and roles</div>
-                        <div>Job-linked workflows</div>
+                        <div>Tasks, teams, and projects</div>
+                        <div>Permissions and access control</div>
+                        <div>Calendar and workload visibility</div>
                       </div>
                     </div>
                   </div>
@@ -245,13 +245,13 @@ export default function LandingPage() {
         <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
           <div>
             <div className="text-sm font-medium uppercase tracking-[0.22em] text-muted-foreground">
-              Built For Samaya
+              Product Direction
             </div>
             <h2 className="mt-4 text-3xl font-semibold text-foreground md:text-5xl">
-              The product language is shifting from solo planning to operational clarity.
+              Assigned is built to keep work clear without making the workflow heavy.
             </h2>
             <p className="mt-4 text-lg text-muted-foreground">
-              The app still carries the planning engine you already built, but the shell around it now points toward company use: shared work, cleaner handoffs, and a real organization model built around access levels, teams, and positions.
+              The product keeps task assignment, personal execution, project context, and team visibility tightly connected while staying modular enough to reshape later without another rebuild.
             </p>
           </div>
 
@@ -277,10 +277,10 @@ export default function LandingPage() {
               Next Phase
             </div>
             <h2 className="mt-4 text-3xl font-semibold text-foreground md:text-5xl">
-              Collaboration comes after the core feels stable.
+              The roadmap keeps Assigned practical before it gets complicated.
             </h2>
             <p className="mt-4 text-lg text-muted-foreground">
-              These are the logical next layers once the auth and data baseline is in place.
+              These are the next logical layers as the core workspace continues to harden.
             </p>
           </div>
 
@@ -298,10 +298,10 @@ export default function LandingPage() {
       <section id="access" className="bg-card px-6 py-24">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-3xl font-semibold text-foreground md:text-5xl">
-            Ready to keep cleaning the foundation?
+            Ready to run work through Assigned?
           </h2>
           <p className="mt-6 text-lg text-muted-foreground">
-            Assigned now has a clearer product identity, cleaner auth/database wiring, and a better base for the Samaya feature work that comes next.
+            Assigned is designed to keep tasks, teams, projects, and day-to-day execution in one cleaner workspace.
           </p>
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link href="/auth/signup">
@@ -328,7 +328,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="text-sm text-muted-foreground">
-            &copy; 2026 {appConfig.productName}. Built first for {appConfig.companyName}.
+            &copy; 2026 {appConfig.productName}.
           </div>
         </div>
       </footer>

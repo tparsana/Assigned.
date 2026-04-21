@@ -33,6 +33,8 @@ type TaskFormOptions = {
   categories: string[]
 }
 
+let cachedTaskFormOptions: TaskFormOptions | null = null
+
 type AddTaskDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -91,7 +93,49 @@ export function AddTaskDialog({
   const isEditMode = Boolean(task)
 
   useEffect(() => {
+    let active = true
+
+    if (cachedTaskFormOptions) {
+      setOptions(cachedTaskFormOptions)
+      return
+    }
+
+    void fetch("/api/tasks/options", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await readJson<TaskFormOptions & { error?: string }>(response)
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Unable to load task options.")
+        }
+
+        if (!active) {
+          return
+        }
+
+        cachedTaskFormOptions = {
+          members: payload.members ?? [],
+          projects: payload.projects ?? [],
+          categories: payload.categories ?? [],
+        }
+        setOptions(cachedTaskFormOptions)
+      })
+      .catch(() => {
+        // Keep the dialog resilient; the open-state loader below will surface errors when needed.
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
     if (!open) {
+      return
+    }
+
+    if (cachedTaskFormOptions) {
+      setOptions(cachedTaskFormOptions)
+      setLoadingOptions(false)
+      setError("")
       return
     }
 
@@ -110,11 +154,13 @@ export function AddTaskDialog({
           return
         }
 
-        setOptions({
+        const nextOptions = {
           members: payload.members ?? [],
           projects: payload.projects ?? [],
           categories: payload.categories ?? [],
-        })
+        }
+        cachedTaskFormOptions = nextOptions
+        setOptions(nextOptions)
       })
       .catch((loadError) => {
         if (!active) {

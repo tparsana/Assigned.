@@ -1,8 +1,10 @@
 import "server-only"
 
+import { cache } from "react"
 import type { User } from "@supabase/supabase-js"
 
 import type { AssignedAccessLevel, AssignedPermission } from "@/lib/assigned-access"
+import { canAccessAssignedDashboard } from "@/lib/assigned-navigation"
 import {
   assignedTaskCategoryOptions,
   type CalendarPageData,
@@ -49,18 +51,25 @@ type WorkspaceContext = {
   membership: MembershipRow
 }
 
-type WorkspaceDataset = {
+type WorkspaceOrgData = {
   memberships: MembershipRow[]
   profiles: ProfileRow[]
   teams: TeamRow[]
   positions: PositionRow[]
   projects: ProjectRow[]
   memberProjects: MemberProjectRow[]
-  tasks: TaskRow[]
+}
+
+type TaskSummaryMeta = {
+  checklistItemsByTaskId: Map<string, ChecklistRow[]>
+  commentCountByTaskId: Map<string, number>
+  attachmentCountByTaskId: Map<string, number>
+}
+
+type TaskRelations = {
   checklistItems: ChecklistRow[]
   comments: CommentRow[]
   attachments: AttachmentRow[]
-  activity: ActivityRow[]
 }
 
 function requireAuthenticatedUser(user: User | null): asserts user is User {
@@ -75,10 +84,8 @@ function requirePermission(context: WorkspaceContext, permission: AssignedPermis
   }
 }
 
-async function getWorkspaceContext(user: User | null): Promise<WorkspaceContext> {
-  requireAuthenticatedUser(user)
-
-  const access = await getAssignedAccessContext(user)
+const loadWorkspaceContextCached = cache(async (userId: string, fallbackUser: User) => {
+  const access = await getAssignedAccessContext(fallbackUser)
   if (!access.organizationId || !access.accessLevel) {
     throw new Error("Your Assigned workspace is not ready yet.")
   }
@@ -87,7 +94,7 @@ async function getWorkspaceContext(user: User | null): Promise<WorkspaceContext>
   const membershipResult = await admin
     .from("assigned_memberships")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .single<MembershipRow>()
 
   if (membershipResult.error) {
@@ -95,15 +102,20 @@ async function getWorkspaceContext(user: User | null): Promise<WorkspaceContext>
   }
 
   return {
-    user,
+    user: fallbackUser,
     accessLevel: access.accessLevel,
     permissions: access.permissions,
     organizationId: access.organizationId,
     membership: membershipResult.data,
-  }
+  } satisfies WorkspaceContext
+})
+
+async function getWorkspaceContext(user: User | null): Promise<WorkspaceContext> {
+  requireAuthenticatedUser(user)
+  return loadWorkspaceContextCached(user.id, user)
 }
 
-async function loadWorkspaceDataset(organizationId: string): Promise<WorkspaceDataset> {
+const loadWorkspaceOrgData = cache(async (organizationId: string): Promise<WorkspaceOrgData> => {
   const admin = createAdminClient()
 
   const [
@@ -113,11 +125,6 @@ async function loadWorkspaceDataset(organizationId: string): Promise<WorkspaceDa
     positionsResult,
     projectsResult,
     memberProjectsResult,
-    tasksResult,
-    checklistResult,
-    commentsResult,
-    attachmentsResult,
-    activityResult,
   ] = await Promise.all([
     admin
       .from("assigned_memberships")
@@ -144,19 +151,6 @@ async function loadWorkspaceDataset(organizationId: string): Promise<WorkspaceDa
       .eq("organization_id", organizationId)
       .order("name", { ascending: true }),
     admin.from("assigned_member_projects").select("*"),
-    admin
-      .from("assigned_tasks")
-      .select("*")
-      .eq("organization_id", organizationId)
-      .order("updated_at", { ascending: false }),
-    admin.from("assigned_task_checklist_items").select("*"),
-    admin.from("assigned_task_comments").select("*"),
-    admin.from("assigned_task_attachments").select("*"),
-    admin
-      .from("assigned_activity_log")
-      .select("*")
-      .eq("organization_id", organizationId)
-      .order("created_at", { ascending: false }),
   ])
 
   const error =
@@ -166,11 +160,6 @@ async function loadWorkspaceDataset(organizationId: string): Promise<WorkspaceDa
     ?? positionsResult.error
     ?? projectsResult.error
     ?? memberProjectsResult.error
-    ?? tasksResult.error
-    ?? checklistResult.error
-    ?? commentsResult.error
-    ?? attachmentsResult.error
-    ?? activityResult.error
 
   if (error) {
     throw error
@@ -183,15 +172,148 @@ async function loadWorkspaceDataset(organizationId: string): Promise<WorkspaceDa
     positions: positionsResult.data ?? [],
     projects: projectsResult.data ?? [],
     memberProjects: memberProjectsResult.data ?? [],
-    tasks: tasksResult.data ?? [],
-    checklistItems: checklistResult.data ?? [],
-    comments: commentsResult.data ?? [],
-    attachments: attachmentsResult.data ?? [],
-    activity: activityResult.data ?? [],
+  }
+})
+
+const loadOrganizationTasks = cache(async (organizationId: string) => {
+  const admin = createAdminClient()
+  const result = await admin
+    .from("assigned_tasks")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .order("updated_at", { ascending: false })
+
+  if (result.error) {
+    throw result.error
+  }
+
+  return result.data ?? []
+})
+
+const loadOrganizationActivity = cache(async (organizationId: string) => {
+  const admin = createAdminClient()
+  const result = await admin
+    .from("assigned_activity_log")
+    .select("*")
+    .eq("organization_id", organizationId)
+    .order("created_at", { ascending: false })
+
+  if (result.error) {
+    throw result.error
+  }
+
+  return result.data ?? []
+})
+
+async function loadTaskSummaryMeta(taskIds: string[]): Promise<TaskSummaryMeta> {
+  if (taskIds.length === 0) {
+    return {
+      checklistItemsByTaskId: new Map(),
+      commentCountByTaskId: new Map(),
+      attachmentCountByTaskId: new Map(),
+    }
+  }
+
+  const admin = createAdminClient()
+  const [checklistResult, commentsResult, attachmentsResult] = await Promise.all([
+    admin
+      .from("assigned_task_checklist_items")
+      .select("task_id, is_completed, id, text, sort_order, created_at")
+      .in("task_id", taskIds),
+    admin
+      .from("assigned_task_comments")
+      .select("task_id")
+      .in("task_id", taskIds),
+    admin
+      .from("assigned_task_attachments")
+      .select("task_id")
+      .in("task_id", taskIds),
+  ])
+
+  const error = checklistResult.error ?? commentsResult.error ?? attachmentsResult.error
+  if (error) {
+    throw error
+  }
+
+  const checklistItemsByTaskId = new Map<string, ChecklistRow[]>()
+  for (const item of checklistResult.data ?? []) {
+    const bucket = checklistItemsByTaskId.get(item.task_id) ?? []
+    bucket.push(item as ChecklistRow)
+    checklistItemsByTaskId.set(item.task_id, bucket)
+  }
+
+  const commentCountByTaskId = new Map<string, number>()
+  for (const comment of commentsResult.data ?? []) {
+    commentCountByTaskId.set(comment.task_id, (commentCountByTaskId.get(comment.task_id) ?? 0) + 1)
+  }
+
+  const attachmentCountByTaskId = new Map<string, number>()
+  for (const attachment of attachmentsResult.data ?? []) {
+    attachmentCountByTaskId.set(
+      attachment.task_id,
+      (attachmentCountByTaskId.get(attachment.task_id) ?? 0) + 1
+    )
+  }
+
+  return {
+    checklistItemsByTaskId,
+    commentCountByTaskId,
+    attachmentCountByTaskId,
   }
 }
 
-function buildLookupMaps(data: WorkspaceDataset) {
+async function loadTaskRelations(taskId: string): Promise<TaskRelations> {
+  const admin = createAdminClient()
+  const [checklistResult, commentsResult, attachmentsResult] = await Promise.all([
+    admin
+      .from("assigned_task_checklist_items")
+      .select("*")
+      .eq("task_id", taskId)
+      .order("sort_order", { ascending: true }),
+    admin
+      .from("assigned_task_comments")
+      .select("*")
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true }),
+    admin
+      .from("assigned_task_attachments")
+      .select("*")
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: false }),
+  ])
+
+  const error = checklistResult.error ?? commentsResult.error ?? attachmentsResult.error
+  if (error) {
+    throw error
+  }
+
+  return {
+    checklistItems: checklistResult.data ?? [],
+    comments: commentsResult.data ?? [],
+    attachments: attachmentsResult.data ?? [],
+  }
+}
+
+async function loadTaskCommentsByIds(taskIds: string[]) {
+  if (taskIds.length === 0) {
+    return []
+  }
+
+  const admin = createAdminClient()
+  const result = await admin
+    .from("assigned_task_comments")
+    .select("*")
+    .in("task_id", taskIds)
+    .order("created_at", { ascending: false })
+
+  if (result.error) {
+    throw result.error
+  }
+
+  return result.data ?? []
+}
+
+function buildLookupMaps(data: WorkspaceOrgData) {
   const profileByUserId = new Map(data.profiles.map((profile) => [profile.user_id, profile]))
   const membershipByUserId = new Map(data.memberships.map((membership) => [membership.user_id, membership]))
   const teamById = new Map(data.teams.map((team) => [team.id, team]))
@@ -206,6 +328,8 @@ function buildLookupMaps(data: WorkspaceDataset) {
     projectById,
   }
 }
+
+type LookupMaps = ReturnType<typeof buildLookupMaps>
 
 function isInternalAccessLevel(accessLevel: AssignedAccessLevel) {
   return accessLevel !== "external"
@@ -278,6 +402,48 @@ function canViewTask(context: WorkspaceContext, task: TaskRow, membershipByUserI
       || (creatorMembership?.team_id && creatorMembership.team_id === context.membership.team_id)
     )
   )
+}
+
+function canViewDashboardTask(
+  context: WorkspaceContext,
+  task: TaskRow,
+  membershipByUserId: Map<string, MembershipRow>
+) {
+  if (context.accessLevel === "admin") {
+    return true
+  }
+
+  if (context.accessLevel !== "team_lead") {
+    return false
+  }
+
+  if (task.assignee_user_id === context.user.id || task.created_by_user_id === context.user.id) {
+    return true
+  }
+
+  const assigneeMembership = membershipByUserId.get(task.assignee_user_id)
+
+  return Boolean(
+    context.membership.team_id
+    && assigneeMembership?.team_id
+    && assigneeMembership.team_id === context.membership.team_id
+  )
+}
+
+function canViewPersonalTask(context: WorkspaceContext, task: TaskRow) {
+  return task.assignee_user_id === context.user.id
+}
+
+function canViewCalendarTask(
+  context: WorkspaceContext,
+  task: TaskRow,
+  membershipByUserId: Map<string, MembershipRow>
+) {
+  if (context.accessLevel === "admin" || context.accessLevel === "team_lead") {
+    return canViewTask(context, task, membershipByUserId)
+  }
+
+  return canViewPersonalTask(context, task)
 }
 
 function canManageTask(context: WorkspaceContext, task: TaskRow, membershipByUserId: Map<string, MembershipRow>) {
@@ -397,17 +563,15 @@ function buildProjectOption(
 function buildTaskSummary(
   task: TaskRow,
   maps: ReturnType<typeof buildLookupMaps>,
-  checklistItems: ChecklistRow[],
-  comments: CommentRow[],
-  attachments: AttachmentRow[]
+  meta: TaskSummaryMeta
 ): TaskSummary {
   const dueDate = task.due_date
   const now = Date.now()
   const dueTimestamp = dueDate ? new Date(dueDate).getTime() : Number.NaN
   const isClosed = task.status === "done" || task.status === "cancelled"
-  const checklistForTask = checklistItems.filter((item) => item.task_id === task.id)
-  const commentCount = comments.filter((comment) => comment.task_id === task.id).length
-  const attachmentCount = attachments.filter((attachment) => attachment.task_id === task.id).length
+  const checklistForTask = meta.checklistItemsByTaskId.get(task.id) ?? []
+  const commentCount = meta.commentCountByTaskId.get(task.id) ?? 0
+  const attachmentCount = meta.attachmentCountByTaskId.get(task.id) ?? 0
   const project = task.project_id ? maps.projectById.get(task.project_id) ?? null : null
 
   return {
@@ -492,26 +656,48 @@ function sortTasks(tasks: TaskSummary[]) {
   })
 }
 
-async function buildBoardData(context: WorkspaceContext): Promise<TaskBoardData> {
-  const data = await loadWorkspaceDataset(context.organizationId)
-  const maps = buildLookupMaps(data)
-  const visibleTasks = data.tasks.filter((task) => canViewTask(context, task, maps.membershipByUserId))
-  const visibleMembers = data.memberships
+async function buildScopedBoardData(
+  context: WorkspaceContext,
+  options: {
+    canViewScopedTask: (task: TaskRow, maps: LookupMaps) => boolean
+    includeAllProjects?: boolean
+    onlyCurrentMember?: boolean
+  }
+): Promise<TaskBoardData> {
+  const [orgData, tasks] = await Promise.all([
+    loadWorkspaceOrgData(context.organizationId),
+    loadOrganizationTasks(context.organizationId),
+  ])
+  const maps = buildLookupMaps(orgData)
+  const visibleTasks = tasks.filter((task) => options.canViewScopedTask(task, maps))
+  const meta = await loadTaskSummaryMeta(visibleTasks.map((task) => task.id))
+
+  const scopedUserIds = new Set<string>([context.user.id])
+  for (const task of visibleTasks) {
+    scopedUserIds.add(task.assignee_user_id)
+    if (task.created_by_user_id) {
+      scopedUserIds.add(task.created_by_user_id)
+    }
+  }
+
+  const visibleMembers = orgData.memberships
     .filter((membership) => membership.status === "active")
-    .filter((membership) => canViewMembership(context, membership))
+    .filter((membership) => {
+      if (options.onlyCurrentMember) {
+        return membership.user_id === context.user.id
+      }
+
+      return scopedUserIds.has(membership.user_id)
+    })
     .map((membership) => buildMemberOption(membership, maps.profileByUserId, maps.teamById, maps.positionById))
     .sort((left, right) => left.fullName.localeCompare(right.fullName))
-  const projects =
-    context.accessLevel === "external"
-      ? data.projects.filter((project) =>
-          visibleTasks.some((task) => task.project_id === project.id)
-        )
-      : data.projects
+
+  const projects = options.includeAllProjects
+    ? orgData.projects
+    : orgData.projects.filter((project) => visibleTasks.some((task) => task.project_id === project.id))
 
   const taskSummaries = sortTasks(
-    visibleTasks.map((task) =>
-      buildTaskSummary(task, maps, data.checklistItems, data.comments, data.attachments)
-    )
+    visibleTasks.map((task) => buildTaskSummary(task, maps, meta))
   )
 
   return {
@@ -524,19 +710,22 @@ async function buildBoardData(context: WorkspaceContext): Promise<TaskBoardData>
   }
 }
 
-function getProjectMemberIds(projectId: string, data: WorkspaceDataset) {
-  const membershipById = new Map(data.memberships.map((membership) => [membership.id, membership]))
+function getProjectMemberIds(projectId: string, orgData: WorkspaceOrgData) {
+  const membershipById = new Map(orgData.memberships.map((membership) => [membership.id, membership]))
 
-  return data.memberProjects
+  return orgData.memberProjects
     .filter((memberProject) => memberProject.project_id === projectId)
     .map((memberProject) => membershipById.get(memberProject.membership_id)?.user_id ?? null)
     .filter((value): value is string => Boolean(value))
 }
 
 async function readTaskOrThrow(context: WorkspaceContext, taskId: string) {
-  const data = await loadWorkspaceDataset(context.organizationId)
-  const maps = buildLookupMaps(data)
-  const task = data.tasks.find((entry) => entry.id === taskId)
+  const [orgData, tasks] = await Promise.all([
+    loadWorkspaceOrgData(context.organizationId),
+    loadOrganizationTasks(context.organizationId),
+  ])
+  const maps = buildLookupMaps(orgData)
+  const task = tasks.find((entry) => entry.id === taskId)
 
   if (!task) {
     throw new Error("Task not found.")
@@ -546,7 +735,7 @@ async function readTaskOrThrow(context: WorkspaceContext, taskId: string) {
     throw new Error("You do not have access to this task.")
   }
 
-  return { data, maps, task }
+  return { orgData, maps, task }
 }
 
 function validateTaskCategory(value: string) {
@@ -590,14 +779,22 @@ async function createActivityLog(input: {
 
 export async function getDashboardData(user: User | null): Promise<TaskBoardData> {
   const context = await getWorkspaceContext(user)
-  return buildBoardData(context)
+  if (!canAccessAssignedDashboard(context.accessLevel)) {
+    throw new Error("You do not have access to the dashboard.")
+  }
+  return buildScopedBoardData(context, {
+    canViewScopedTask: (task, maps) => canViewDashboardTask(context, task, maps.membershipByUserId),
+    includeAllProjects: context.accessLevel === "admin",
+  })
 }
 
 export async function getMyTasksData(user: User | null): Promise<MyTasksData> {
   const context = await getWorkspaceContext(user)
-  const board = await buildBoardData(context)
-  const tasks = board.tasks.filter((task) => task.assignee.userId === context.user.id)
-  const now = Date.now()
+  const board = await buildScopedBoardData(context, {
+    canViewScopedTask: (task) => canViewPersonalTask(context, task),
+    onlyCurrentMember: true,
+  })
+  const tasks = board.tasks
   const startOfTomorrow = new Date()
   startOfTomorrow.setHours(24, 0, 0, 0)
 
@@ -624,7 +821,9 @@ export async function getMyTasksData(user: User | null): Promise<MyTasksData> {
 
 export async function getCalendarData(user: User | null): Promise<CalendarPageData> {
   const context = await getWorkspaceContext(user)
-  const board = await buildBoardData(context)
+  const board = await buildScopedBoardData(context, {
+    canViewScopedTask: (task, maps) => canViewCalendarTask(context, task, maps.membershipByUserId),
+  })
 
   return {
     ...board,
@@ -634,18 +833,21 @@ export async function getCalendarData(user: User | null): Promise<CalendarPageDa
 
 export async function getProjectsPageData(user: User | null): Promise<ProjectsPageData> {
   const context = await getWorkspaceContext(user)
-  const data = await loadWorkspaceDataset(context.organizationId)
-  const maps = buildLookupMaps(data)
-  const visibleTasks = data.tasks.filter((task) => canViewTask(context, task, maps.membershipByUserId))
+  const [orgData, tasks] = await Promise.all([
+    loadWorkspaceOrgData(context.organizationId),
+    loadOrganizationTasks(context.organizationId),
+  ])
+  const maps = buildLookupMaps(orgData)
+  const visibleTasks = tasks.filter((task) => canViewTask(context, task, maps.membershipByUserId))
   const visibleProjects =
     context.accessLevel === "external"
-      ? data.projects.filter((project) => visibleTasks.some((task) => task.project_id === project.id))
-      : data.projects
+      ? orgData.projects.filter((project) => visibleTasks.some((task) => task.project_id === project.id))
+      : orgData.projects
 
   const projects = visibleProjects.map((project) => {
     const projectTasks = visibleTasks.filter((task) => task.project_id === project.id)
     const memberIds = new Set([
-      ...getProjectMemberIds(project.id, data),
+      ...getProjectMemberIds(project.id, orgData),
       ...projectTasks.map((task) => task.assignee_user_id),
     ])
 
@@ -664,7 +866,7 @@ export async function getProjectsPageData(user: User | null): Promise<ProjectsPa
     } satisfies ProjectSummaryData
   })
 
-  const visibleMembers = data.memberships
+  const visibleMembers = orgData.memberships
     .filter((membership) => membership.status === "active")
     .filter((membership) => canViewMembership(context, membership))
     .map((membership) => buildMemberOption(membership, maps.profileByUserId, maps.teamById, maps.positionById))
@@ -679,30 +881,32 @@ export async function getProjectsPageData(user: User | null): Promise<ProjectsPa
 
 export async function getProjectDetailData(user: User | null, projectId: string): Promise<ProjectDetailData> {
   const context = await getWorkspaceContext(user)
-  const data = await loadWorkspaceDataset(context.organizationId)
-  const maps = buildLookupMaps(data)
-  const project = data.projects.find((entry) => entry.id === projectId)
+  const [orgData, tasks] = await Promise.all([
+    loadWorkspaceOrgData(context.organizationId),
+    loadOrganizationTasks(context.organizationId),
+  ])
+  const maps = buildLookupMaps(orgData)
+  const project = orgData.projects.find((entry) => entry.id === projectId)
 
   if (!project) {
     throw new Error("Project not found.")
   }
 
-  if (context.accessLevel === "external" && !data.tasks.some((task) => task.project_id === projectId && task.assignee_user_id === context.user.id)) {
+  if (context.accessLevel === "external" && !tasks.some((task) => task.project_id === projectId && task.assignee_user_id === context.user.id)) {
     throw new Error("You do not have access to this project.")
   }
 
-  const linkedTaskRows = data.tasks
+  const linkedTaskRows = tasks
     .filter((task) => task.project_id === projectId)
     .filter((task) => canViewTask(context, task, maps.membershipByUserId))
+  const meta = await loadTaskSummaryMeta(linkedTaskRows.map((task) => task.id))
   const linkedTasks = sortTasks(
-    linkedTaskRows.map((task) =>
-      buildTaskSummary(task, maps, data.checklistItems, data.comments, data.attachments)
-    )
+    linkedTaskRows.map((task) => buildTaskSummary(task, maps, meta))
   )
 
   const teamMembers = Array.from(
     new Set([
-      ...getProjectMemberIds(projectId, data),
+      ...getProjectMemberIds(projectId, orgData),
       ...linkedTaskRows.map((task) => task.assignee_user_id),
     ])
   )
@@ -712,8 +916,7 @@ export async function getProjectDetailData(user: User | null, projectId: string)
     .map((membership) => buildMemberOption(membership, maps.profileByUserId, maps.teamById, maps.positionById))
     .sort((left, right) => left.fullName.localeCompare(right.fullName))
 
-  const recentComments = data.comments
-    .filter((comment) => linkedTaskRows.some((task) => task.id === comment.task_id))
+  const recentComments = (await loadTaskCommentsByIds(linkedTaskRows.map((task) => task.id)))
     .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
     .slice(0, 12)
     .map((comment) => ({
@@ -730,7 +933,7 @@ export async function getProjectDetailData(user: User | null, projectId: string)
     } satisfies TaskCommentData))
 
   const memberIds = new Set([
-    ...getProjectMemberIds(projectId, data),
+    ...getProjectMemberIds(projectId, orgData),
     ...linkedTaskRows.map((task) => task.assignee_user_id),
   ])
 
@@ -757,11 +960,14 @@ export async function getProjectDetailData(user: User | null, projectId: string)
 
 export async function getTaskDetailData(user: User | null, taskId: string): Promise<TaskDetailData> {
   const context = await getWorkspaceContext(user)
-  const { data, maps, task } = await readTaskOrThrow(context, taskId)
-
-  const taskSummary = buildTaskSummary(task, maps, data.checklistItems, data.comments, data.attachments)
-  const checklistItems = data.checklistItems
-    .filter((item) => item.task_id === task.id)
+  const { maps, task } = await readTaskOrThrow(context, taskId)
+  const relations = await loadTaskRelations(taskId)
+  const taskSummary = buildTaskSummary(task, maps, {
+    checklistItemsByTaskId: new Map([[taskId, relations.checklistItems]]),
+    commentCountByTaskId: new Map([[taskId, relations.comments.length]]),
+    attachmentCountByTaskId: new Map([[taskId, relations.attachments.length]]),
+  })
+  const checklistItems = relations.checklistItems
     .sort((left, right) => left.sort_order - right.sort_order || new Date(left.created_at).getTime() - new Date(right.created_at).getTime())
     .map((item) => ({
       id: item.id,
@@ -771,8 +977,7 @@ export async function getTaskDetailData(user: User | null, taskId: string): Prom
       createdAt: item.created_at,
     } satisfies TaskChecklistItemData))
 
-  const comments = data.comments
-    .filter((comment) => comment.task_id === task.id)
+  const comments = relations.comments
     .sort((left, right) => new Date(left.created_at).getTime() - new Date(right.created_at).getTime())
     .map((comment) => ({
       id: comment.id,
@@ -787,8 +992,7 @@ export async function getTaskDetailData(user: User | null, taskId: string): Prom
       ),
     } satisfies TaskCommentData))
 
-  const attachments = data.attachments
-    .filter((attachment) => attachment.task_id === task.id)
+  const attachments = relations.attachments
     .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime())
     .map((attachment) => ({
       id: attachment.id,
@@ -822,9 +1026,9 @@ export async function getTaskDetailData(user: User | null, taskId: string): Prom
 
 export async function getTaskFormOptions(user: User | null) {
   const context = await getWorkspaceContext(user)
-  const data = await loadWorkspaceDataset(context.organizationId)
-  const maps = buildLookupMaps(data)
-  const members = data.memberships
+  const orgData = await loadWorkspaceOrgData(context.organizationId)
+  const maps = buildLookupMaps(orgData)
+  const members = orgData.memberships
     .filter((membership) => membership.status === "active")
     .filter((membership) => canAssignToUser(context, membership))
     .map((membership) => buildMemberOption(membership, maps.profileByUserId, maps.teamById, maps.positionById))
@@ -833,7 +1037,7 @@ export async function getTaskFormOptions(user: User | null) {
   const projects =
     context.accessLevel === "external"
       ? []
-      : data.projects.map((project) => buildProjectOption(project, maps.profileByUserId))
+      : orgData.projects.map((project) => buildProjectOption(project, maps.profileByUserId))
 
   return {
     viewer: buildViewer(context),
@@ -848,15 +1052,15 @@ export async function createTask(user: User | null, input: CreateTaskInput) {
   requirePermission(context, "create_tasks")
 
   const admin = createAdminClient()
-  const data = await loadWorkspaceDataset(context.organizationId)
-  const maps = buildLookupMaps(data)
+  const orgData = await loadWorkspaceOrgData(context.organizationId)
+  const maps = buildLookupMaps(orgData)
   const assigneeMembership = maps.membershipByUserId.get(input.assigneeUserId)
 
   if (!canAssignToUser(context, assigneeMembership)) {
     throw new Error("You cannot assign a task to that teammate.")
   }
 
-  if (input.projectId && !data.projects.some((project) => project.id === input.projectId)) {
+  if (input.projectId && !orgData.projects.some((project) => project.id === input.projectId)) {
     throw new Error("Project not found.")
   }
 
@@ -918,9 +1122,12 @@ export async function createTask(user: User | null, input: CreateTaskInput) {
 export async function updateTask(user: User | null, taskId: string, input: UpdateTaskInput) {
   const context = await getWorkspaceContext(user)
   const admin = createAdminClient()
-  const data = await loadWorkspaceDataset(context.organizationId)
-  const maps = buildLookupMaps(data)
-  const existingTask = data.tasks.find((task) => task.id === taskId)
+  const [orgData, tasks] = await Promise.all([
+    loadWorkspaceOrgData(context.organizationId),
+    loadOrganizationTasks(context.organizationId),
+  ])
+  const maps = buildLookupMaps(orgData)
+  const existingTask = tasks.find((task) => task.id === taskId)
 
   if (!existingTask) {
     throw new Error("Task not found.")
@@ -937,7 +1144,7 @@ export async function updateTask(user: User | null, taskId: string, input: Updat
     }
   }
 
-  if (input.projectId && !data.projects.some((project) => project.id === input.projectId)) {
+  if (input.projectId && !orgData.projects.some((project) => project.id === input.projectId)) {
     throw new Error("Project not found.")
   }
 
@@ -984,9 +1191,12 @@ export async function updateTask(user: User | null, taskId: string, input: Updat
 export async function deleteTask(user: User | null, taskId: string) {
   const context = await getWorkspaceContext(user)
   const admin = createAdminClient()
-  const data = await loadWorkspaceDataset(context.organizationId)
-  const maps = buildLookupMaps(data)
-  const existingTask = data.tasks.find((task) => task.id === taskId)
+  const [orgData, tasks] = await Promise.all([
+    loadWorkspaceOrgData(context.organizationId),
+    loadOrganizationTasks(context.organizationId),
+  ])
+  const maps = buildLookupMaps(orgData)
+  const existingTask = tasks.find((task) => task.id === taskId)
 
   if (!existingTask) {
     throw new Error("Task not found.")
@@ -1079,7 +1289,7 @@ export async function updateProject(user: User | null, projectId: string, input:
 
 export async function createChecklistItem(user: User | null, taskId: string, text: string) {
   const context = await getWorkspaceContext(user)
-  const { data, maps, task } = await readTaskOrThrow(context, taskId)
+  const { maps, task } = await readTaskOrThrow(context, taskId)
 
   if (!canManageTask(context, task, maps.membershipByUserId)) {
     throw new Error("You do not have access to edit this task.")
@@ -1091,8 +1301,7 @@ export async function createChecklistItem(user: User | null, taskId: string, tex
   }
 
   const nextSortOrder =
-    data.checklistItems
-      .filter((item) => item.task_id === taskId)
+    (await loadTaskRelations(taskId)).checklistItems
       .reduce((max, item) => Math.max(max, item.sort_order), -1) + 1
 
   const admin = createAdminClient()

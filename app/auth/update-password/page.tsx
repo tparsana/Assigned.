@@ -10,10 +10,13 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { createClient } from "@/lib/supabase/client"
+import { getAssignedHomePath } from "@/lib/assigned-navigation"
+import { useAssignedAccess } from "@/components/assigned-access-provider"
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const { accessLevel } = useAssignedAccess()
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -64,7 +67,7 @@ export default function UpdatePasswordPage() {
       return
     }
 
-    router.replace("/app")
+    router.replace(getAssignedHomePath(accessLevel))
     router.refresh()
   }
 

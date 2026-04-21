@@ -19,9 +19,10 @@ import { createTeamDraft, type TeamDetailData, type TeamDraft } from "@/lib/team
 
 type TeamDetailPageProps = {
   teamId: string
+  initialDetail?: TeamDetailData | null
 }
 
-export function TeamDetailPage({ teamId }: TeamDetailPageProps) {
+export function TeamDetailPage({ teamId, initialDetail = null }: TeamDetailPageProps) {
   const {
     viewer,
     members,
@@ -29,13 +30,17 @@ export function TeamDetailPage({ teamId }: TeamDetailPageProps) {
     loadTeamDetail,
     updateTeam,
   } = useTeamDirectoryData()
-  const [detail, setDetail] = useState<TeamDetailData | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [detail, setDetail] = useState<TeamDetailData | null>(initialDetail)
+  const [loading, setLoading] = useState(!initialDetail)
   const [error, setError] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [teamDraft, setTeamDraft] = useState<TeamDraft>(createTeamDraft())
 
   useEffect(() => {
+    if (initialDetail) {
+      return
+    }
+
     let active = true
 
     void (async () => {
@@ -69,7 +74,7 @@ export function TeamDetailPage({ teamId }: TeamDetailPageProps) {
     return () => {
       active = false
     }
-  }, [loadTeamDetail, teamId])
+  }, [initialDetail, loadTeamDetail, teamId])
 
   if (loading) {
     return (
