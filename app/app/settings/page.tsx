@@ -1,10 +1,18 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 
+import { useAssignedAccess } from "@/components/assigned-access-provider"
+import { appConfig } from "@/lib/app-config"
+import {
+  getAssignedAccessLevelDescription,
+  getAssignedAccessLevelLabel,
+  getAssignedPermissionLabel,
+} from "@/lib/assigned-access"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -35,20 +43,14 @@ import {
   Trash2,
   Upload,
 } from "lucide-react"
-import { useTaskedState } from "@/lib/tasked-store"
+import { useAssignedState } from "@/lib/assigned-store"
+import { createClient } from "@/lib/supabase/client"
 
-type SettingsTab = "profile" | "notifications" | "preferences" | "ai" | "integrations" | "privacy"
-
-const tabs = [
-  { id: "profile" as SettingsTab, label: "Profile", icon: User },
-  { id: "notifications" as SettingsTab, label: "Notifications", icon: Bell },
-  { id: "preferences" as SettingsTab, label: "Preferences", icon: Palette },
-  { id: "ai" as SettingsTab, label: "AI Settings", icon: Brain },
-  { id: "integrations" as SettingsTab, label: "Integrations", icon: Calendar },
-  { id: "privacy" as SettingsTab, label: "Privacy & Data", icon: Shield },
-]
+type SettingsTab = "profile" | "notifications" | "preferences" | "ai" | "integrations" | "access" | "privacy"
 
 export default function SettingsPage() {
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
   const {
     profile,
     notifications,
@@ -64,9 +66,27 @@ export default function SettingsPage() {
     setPrivacySetting,
     exportState,
     resetState,
-  } = useTaskedState()
+  } = useAssignedState()
+  const {
+    profile: accessProfile,
+    accessLevel,
+    isAdmin,
+    organization,
+    onboardingCompleted,
+    permissions,
+    bootstrapAvailable,
+    team,
+    position,
+    projects: assignedProjects,
+    awaitingAssignment,
+    can,
+    updateAccountProfile,
+    submitAdminAccessCode,
+  } = useAssignedAccess()
   const { theme, setTheme } = useTheme()
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile")
+  const createdClickCountRef = useRef(0)
+  const createdClickResetRef = useRef<number | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const previewAreaRef = useRef<HTMLDivElement | null>(null)
   const dragStateRef = useRef<{
@@ -87,13 +107,30 @@ export default function SettingsPage() {
     height: number
   } | null>(null)
   const [cropRect, setCropRect] = useState<{ x: number; y: number; size: number } | null>(null)
+  const [adminBootstrapOpen, setAdminBootstrapOpen] = useState(false)
+  const [isSavingProfile, setIsSavingProfile] = useState(false)
+  const [profileStatus, setProfileStatus] = useState("")
+  const [adminSecret, setAdminSecret] = useState("")
+  const [accessStatus, setAccessStatus] = useState("")
+  const [isUpdatingAccess, setIsUpdatingAccess] = useState(false)
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false)
+
+  const tabs = [
+    { id: "profile" as SettingsTab, label: "Profile", icon: User },
+    { id: "notifications" as SettingsTab, label: "Notifications", icon: Bell },
+    { id: "preferences" as SettingsTab, label: "Preferences", icon: Palette },
+    { id: "ai" as SettingsTab, label: "AI Settings", icon: Brain },
+    { id: "integrations" as SettingsTab, label: "Integrations", icon: Calendar },
+    { id: "access" as SettingsTab, label: "Access", icon: Shield },
+    { id: "privacy" as SettingsTab, label: "Privacy & Data", icon: Shield },
+  ]
 
   const downloadExport = () => {
     const blob = new Blob([exportState()], { type: "application/json" })
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement("a")
     anchor.href = url
-    anchor.download = "tasked-export.json"
+    anchor.download = appConfig.exports.stateFileName
     anchor.click()
     URL.revokeObjectURL(url)
   }
@@ -108,6 +145,14 @@ export default function SettingsPage() {
       }
     }
   }, [pendingImageUrl])
+
+  useEffect(() => {
+    return () => {
+      if (createdClickResetRef.current) {
+        window.clearTimeout(createdClickResetRef.current)
+      }
+    }
+  }, [])
 
   const getContainImageSize = (
     naturalWidth: number,
@@ -259,6 +304,83 @@ export default function SettingsPage() {
 
     updateProfile({ avatarUrl: canvas.toDataURL("image/webp", 0.92) })
     closeAvatarEditor()
+  }
+
+  const handleSaveProfile = async () => {
+    setIsSavingProfile(true)
+    setProfileStatus("")
+
+    const result = await updateAccountProfile({
+      firstName: profile.firstName.trim(),
+      lastName: profile.lastName.trim(),
+      timezone: profile.timezone,
+      avatarUrl: profile.avatarUrl,
+    })
+
+    setIsSavingProfile(false)
+    setProfileStatus(result.error ?? "Profile saved.")
+  }
+
+  const handleAdminAccessSubmit = async () => {
+    setIsUpdatingAccess(true)
+    setAccessStatus("")
+
+    const result = await submitAdminAccessCode(adminSecret)
+
+    setIsUpdatingAccess(false)
+    setAccessStatus(
+      result.error
+        ? result.error
+        : "Admin access claimed for this account."
+    )
+
+    if (!result.error) {
+      setAdminSecret("")
+    }
+  }
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm("Delete your Assigned account? This removes your access, profile, and workspace state. You would need to sign up again and be re-assigned to return.")) {
+      return
+    }
+
+    setIsDeletingAccount(true)
+    setProfileStatus("")
+
+    const response = await fetch("/api/access/account", {
+      method: "DELETE",
+    })
+    const payload = await response.json().catch(() => ({})) as { error?: string }
+
+    if (!response.ok) {
+      setIsDeletingAccount(false)
+      setProfileStatus(payload.error ?? "Unable to delete your account.")
+      return
+    }
+
+    await resetState()
+    await supabase.auth.signOut().catch(() => undefined)
+    router.replace("/auth/signin")
+    router.refresh()
+  }
+
+  const handleCuriouslyCreatedClick = () => {
+    if (createdClickResetRef.current) {
+      window.clearTimeout(createdClickResetRef.current)
+    }
+
+    createdClickCountRef.current += 1
+
+    if (createdClickCountRef.current >= 5) {
+      createdClickCountRef.current = 0
+      setAdminBootstrapOpen(true)
+      return
+    }
+
+    createdClickResetRef.current = window.setTimeout(() => {
+      createdClickCountRef.current = 0
+      createdClickResetRef.current = null
+    }, 1400)
   }
 
   useEffect(() => {
@@ -580,9 +702,13 @@ export default function SettingsPage() {
                     id="email"
                     type="email"
                     value={profile.email}
-                    onChange={(event) => updateProfile({ email: event.target.value })}
                     className="bg-background border-border"
+                    readOnly
+                    disabled
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Email is managed through Supabase auth and stays read-only here.
+                  </p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="timezone" className="text-foreground">Timezone</Label>
@@ -601,9 +727,20 @@ export default function SettingsPage() {
               </div>
 
               <div className="mt-6 pt-6 border-t border-border flex justify-end">
-                <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-                  Save Changes
-                </Button>
+                <div className="flex items-center gap-3">
+                  {profileStatus ? (
+                    <span className={`text-sm ${profileStatus === "Profile saved." ? "text-muted-foreground" : "text-destructive"}`}>
+                      {profileStatus}
+                    </span>
+                  ) : null}
+                  <Button
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
+                    disabled={isSavingProfile}
+                    onClick={() => void handleSaveProfile()}
+                  >
+                    {isSavingProfile ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
               </div>
             </div>
           )}
@@ -848,6 +985,102 @@ export default function SettingsPage() {
             </div>
           )}
 
+          {activeTab === "access" && (
+            <div className="space-y-6">
+              <div className="bg-card rounded-xl border border-border p-6">
+                <h2 className="text-lg font-semibold text-foreground mb-6">Access & Permissions</h2>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="text-sm text-muted-foreground">Organization</div>
+                    <div className="mt-1 font-medium text-foreground">{organization?.name ?? "Samaya"}</div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="text-sm text-muted-foreground">Access Level</div>
+                    <div className="mt-1 font-medium text-foreground">{getAssignedAccessLevelLabel(accessLevel)}</div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="text-sm text-muted-foreground">Assignment State</div>
+                    <div className="mt-1 font-medium text-foreground">{awaitingAssignment ? "Awaiting assignment" : "Assigned"}</div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="text-sm text-muted-foreground">Onboarding</div>
+                    <div className="mt-1 font-medium text-foreground">{onboardingCompleted ? "Completed" : "Pending"}</div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="text-sm text-muted-foreground">Bootstrap Admin</div>
+                    <div className="mt-1 font-medium text-foreground">
+                      {bootstrapAvailable ? "Available until first admin is claimed" : "Locked after first admin"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="text-sm text-muted-foreground">Team</div>
+                    <div className="mt-1 font-medium text-foreground">{team?.label ?? "Awaiting assignment"}</div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="text-sm text-muted-foreground">Position</div>
+                    <div className="mt-1 font-medium text-foreground">{position?.label ?? "Awaiting assignment"}</div>
+                  </div>
+                  <div className="rounded-xl border border-border bg-background p-4">
+                    <div className="text-sm text-muted-foreground">Projects / Sites</div>
+                    <div className="mt-1 font-medium text-foreground">
+                      {assignedProjects.length > 0 ? assignedProjects.map((project) => project.name).join(", ") : "Awaiting assignment"}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 rounded-xl border border-border bg-background p-4">
+                  <div className="text-sm font-medium text-foreground">Access description</div>
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    {getAssignedAccessLevelDescription(accessLevel)}
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <div className="text-sm font-medium text-foreground">Current permissions</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {permissions.map((permission) => (
+                      <span
+                        key={permission}
+                        className="rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground"
+                      >
+                        {getAssignedPermissionLabel(permission)}
+                      </span>
+                    ))}
+                    {permissions.length === 0 ? (
+                      <span className="text-sm text-muted-foreground">No permissions assigned yet.</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {accessStatus ? (
+                  <p className={`mt-4 text-sm ${accessStatus.includes("claimed") ? "text-muted-foreground" : "text-destructive"}`}>
+                    {accessStatus}
+                  </p>
+                ) : null}
+              </div>
+
+              {can("edit_users") && (
+                <div className="bg-card rounded-xl border border-border p-6">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold text-foreground">Organization Management</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Team assignment, position management, project assignment, and access changes now live in the Team workspace.
+                      </p>
+                    </div>
+                  </div>
+                  <Button className="mt-6" asChild>
+                    <Link href="/app/team">Open Team Management</Link>
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {activeTab === "privacy" && (
             <div className="space-y-6">
               <div className="bg-card rounded-xl border border-border p-6">
@@ -900,27 +1133,94 @@ export default function SettingsPage() {
               <div className="bg-destructive/5 rounded-xl border border-destructive/20 p-6">
                 <h3 className="font-semibold text-destructive mb-2">Danger Zone</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Reset your workspace on this device back to a blank starting state.
+                  Reset your server-backed workspace state, or permanently delete your Assigned account and start over from scratch later if needed.
                 </p>
-                <Button
-                  variant="outline"
-                  className="border-destructive text-destructive hover:bg-destructive/10"
-                  onClick={() => {
-                    if (window.confirm("Reset all local Tasked data on this device?")) {
-                      resetState()
-                    }
-                  }}
-                >
-                  Reset Local Data
-                </Button>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    variant="outline"
+                    className="border-destructive text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      if (window.confirm("Reset your Assigned workspace state? This clears the synced workspace and cached offline copy for this account.")) {
+                        void resetState()
+                      }
+                    }}
+                  >
+                    Reset Workspace State
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="border-destructive text-destructive hover:bg-destructive/10"
+                    disabled={isDeletingAccount}
+                    onClick={() => {
+                      void handleDeleteAccount()
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {isDeletingAccount ? "Deleting Account..." : "Delete My Account"}
+                  </Button>
+                </div>
               </div>
             </div>
           )}
         </div>
       </div>
 
+      <Dialog open={adminBootstrapOpen} onOpenChange={setAdminBootstrapOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Admin Bootstrap</DialogTitle>
+            <DialogDescription>
+              Enter the secret code to claim the first admin account. This path closes permanently after one admin exists.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <Label htmlFor="admin-secret-code" className="text-foreground">
+              Secret code
+            </Label>
+            <Input
+              id="admin-secret-code"
+              type="password"
+              value={adminSecret}
+              onChange={(event) => setAdminSecret(event.target.value)}
+              placeholder="Enter the admin access code"
+              className="bg-background border-border"
+            />
+            {accessStatus ? (
+              <p className={`text-sm ${accessStatus.includes("claimed") ? "text-muted-foreground" : "text-destructive"}`}>
+                {accessStatus}
+              </p>
+            ) : null}
+            {!bootstrapAvailable ? (
+              <p className="text-sm text-muted-foreground">
+                Admin bootstrap is no longer available because this organization already has an admin.
+              </p>
+            ) : null}
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAdminBootstrapOpen(false)}>
+              Close
+            </Button>
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={isUpdatingAccess || !adminSecret.trim() || !bootstrapAvailable}
+              onClick={() => void handleAdminAccessSubmit()}
+            >
+              {isUpdatingAccess ? "Updating..." : "Claim Admin Access"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="mt-8 border-t border-border pt-6 text-center text-sm text-muted-foreground">
-        Curiously Created by{" "}
+        <span
+          onClick={handleCuriouslyCreatedClick}
+          className="cursor-default"
+        >
+          Curiously Created
+        </span>{" "}
+        by{" "}
         <a
           href="https://solo.to/tparsana"
           target="_blank"

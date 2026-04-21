@@ -24,7 +24,7 @@ import {
 } from "react"
 import type { User } from "@supabase/supabase-js"
 
-import { createClient } from "@/lib/supabase/client"
+import { useAssignedAccess } from "@/components/assigned-access-provider"
 
 export type TaskSource = "manual" | "image" | "voice" | "imported"
 export type TaskPriority = "none" | "high" | "medium" | "low"
@@ -154,7 +154,7 @@ export interface PomodoroState {
   lastCompletedMode: PomodoroMode | null
 }
 
-export interface TaskedState {
+export interface AssignedState {
   lists: TaskList[]
   tasks: Task[]
   inboxItems: InboxItem[]
@@ -202,7 +202,7 @@ type AddScheduleBlockInput = {
   taskId?: string | null
 }
 
-type TaskedContextValue = TaskedState & {
+type AssignedContextValue = AssignedState & {
   hydrated: boolean
   todayKey: string
   addTask: (input: AddTaskInput) => string
@@ -250,18 +250,20 @@ type TaskedContextValue = TaskedState & {
   resetPomodoro: (mode?: PomodoroMode) => void
   endPomodoroSession: () => void
   exportState: () => string
-  resetState: () => void
+  resetState: () => Promise<void>
 }
 
+// Keep reading the old browser keys so existing local caches survive the rename to Assigned.
 const LEGACY_STORAGE_KEY = "tasked.local-state.v1"
-const STORAGE_KEY_PREFIX = "tasked.local-state.v2"
-const TASKED_STATE_TABLE = "tasked_user_states"
-const TaskedContext = createContext<TaskedContextValue | null>(null)
+const LEGACY_USER_STORAGE_KEY_PREFIX = "tasked.local-state.v2"
+const STORAGE_KEY_PREFIX = "assigned.local-state.v1"
+const AssignedContext = createContext<AssignedContextValue | null>(null)
 const DEFAULT_POMODORO_DURATIONS: Record<PomodoroMode, number> = {
   focus: 25,
   shortBreak: 5,
   longBreak: 15,
 }
+const ASSIGNED_STATE_SYNC_DEBOUNCE_MS = 350
 
 function makeId(prefix: string) {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -430,10 +432,18 @@ function getNextPomodoroMode(mode: PomodoroMode, completedFocusSessions: number)
 
 function getStorageKey(userId?: string | null) {
   if (!userId) {
-    return LEGACY_STORAGE_KEY
+    return `${STORAGE_KEY_PREFIX}.guest`
   }
 
   return `${STORAGE_KEY_PREFIX}.${userId}`
+}
+
+function getLegacyStorageKeys(userId?: string | null) {
+  if (!userId) {
+    return [LEGACY_STORAGE_KEY]
+  }
+
+  return [LEGACY_STORAGE_KEY, `${LEGACY_USER_STORAGE_KEY_PREFIX}.${userId}`]
 }
 
 function readStoredState(storageKey: string) {
@@ -447,19 +457,75 @@ function readStoredState(storageKey: string) {
   }
 
   try {
-    return JSON.parse(savedState) as TaskedState
+    return JSON.parse(savedState) as AssignedState
   } catch {
     window.localStorage.removeItem(storageKey)
     return null
   }
 }
 
-function writeStoredState(storageKey: string, state: TaskedState) {
+function readStoredStateWithFallback(storageKeys: string[]) {
+  for (const storageKey of storageKeys) {
+    const storedState = readStoredState(storageKey)
+
+    if (storedState) {
+      return storedState
+    }
+  }
+
+  return null
+}
+
+function writeStoredState(storageKey: string, state: AssignedState) {
   if (typeof window === "undefined") {
     return
   }
 
   window.localStorage.setItem(storageKey, JSON.stringify(state))
+}
+
+async function fetchAssignedState() {
+  const response = await fetch("/api/state", { cache: "no-store" })
+  const payload = (await response.json().catch(() => ({}))) as {
+    error?: string
+    state?: Partial<AssignedState> | null
+  }
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Unable to load Assigned state.")
+  }
+
+  return payload.state ?? null
+}
+
+async function persistAssignedState(state: AssignedState) {
+  const response = await fetch("/api/state", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      state,
+    }),
+  })
+
+  const payload = (await response.json().catch(() => ({}))) as { error?: string }
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Unable to sync Assigned state.")
+  }
+}
+
+async function deleteAssignedStateOnServer() {
+  const response = await fetch("/api/state", {
+    method: "DELETE",
+  })
+
+  const payload = (await response.json().catch(() => ({}))) as { error?: string }
+
+  if (!response.ok) {
+    throw new Error(payload.error ?? "Unable to reset Assigned state.")
+  }
 }
 
 function buildProfileSeed(user?: User | null): Partial<ProfileState> {
@@ -508,7 +574,7 @@ function normalizeBoardColumn(value: string | null | undefined): BoardColumn {
   }
 }
 
-function dedupeLists(state: TaskedState): TaskedState {
+function dedupeLists(state: AssignedState): AssignedState {
   if (state.lists.length < 2) {
     return state
   }
@@ -576,9 +642,9 @@ function dedupeLists(state: TaskedState): TaskedState {
 }
 
 function normalizeState(
-  value: Partial<TaskedState> | null | undefined,
-  fallback: TaskedState
-): TaskedState {
+  value: Partial<AssignedState> | null | undefined,
+  fallback: AssignedState
+): AssignedState {
   if (!value) {
     return fallback
   }
@@ -643,7 +709,7 @@ function normalizeState(
   })
 }
 
-function syncProfileWithUser(state: TaskedState, user?: User | null) {
+function syncProfileWithUser(state: AssignedState, user?: User | null) {
   if (!user?.email) {
     return state
   }
@@ -657,7 +723,7 @@ function syncProfileWithUser(state: TaskedState, user?: User | null) {
   }
 }
 
-function createSeedState(profileSeed?: Partial<ProfileState>): TaskedState {
+function createSeedState(profileSeed?: Partial<ProfileState>): AssignedState {
   return {
     lists: [],
     tasks: [],
@@ -796,14 +862,17 @@ function createTaskFromInboxItem(item: InboxItem): Task {
   }
 }
 
-export function TaskedStateProvider({ children }: { children: ReactNode }) {
-  const supabase = useMemo(() => createClient(), [])
-  const [state, setState] = useState<TaskedState>(() => createSeedState())
+export function AssignedStateProvider({ children }: { children: ReactNode }) {
+  const { loading: accessLoading, user } = useAssignedAccess()
+  const [state, setState] = useState<AssignedState>(() => createSeedState())
   const [hydrated, setHydrated] = useState(false)
   const [userId, setUserId] = useState<string | null>(null)
-  const [cloudEnabled, setCloudEnabled] = useState(false)
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator === "undefined" ? true : navigator.onLine
+  )
   const lastSerializedStateRef = useRef<string | null>(null)
   const currentUserRef = useRef<User | null>(null)
+  const pendingSyncRef = useRef(false)
 
   const loadStateForUser = useCallback(
     async (user: User | null) => {
@@ -812,87 +881,53 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
 
       const profileSeed = buildProfileSeed(user)
       const baseState = createSeedState(profileSeed)
-      const localFallback = readStoredState(getStorageKey(user?.id))
+      const localFallback = readStoredStateWithFallback([
+        getStorageKey(user?.id),
+        ...getLegacyStorageKeys(user?.id),
+      ])
       const fallbackState = syncProfileWithUser(normalizeState(localFallback, baseState), user)
 
       if (!user) {
-        setCloudEnabled(false)
         setState(fallbackState)
         lastSerializedStateRef.current = JSON.stringify(fallbackState)
         setHydrated(true)
         return
       }
 
-      const { data, error } = await supabase
-        .from(TASKED_STATE_TABLE)
-        .select("state")
-        .eq("user_id", user.id)
-        .maybeSingle()
+      try {
+        const remoteState = await fetchAssignedState()
+        const nextState = syncProfileWithUser(
+          normalizeState(remoteState ?? fallbackState, baseState),
+          user
+        )
 
-      if (error) {
-        console.error("Tasked cloud state unavailable:", error.message)
-        setCloudEnabled(false)
-        setState(fallbackState)
-        lastSerializedStateRef.current = JSON.stringify(fallbackState)
-        setHydrated(true)
-        return
-      }
-
-      const nextState = syncProfileWithUser(
-        normalizeState((data?.state as Partial<TaskedState> | undefined) ?? fallbackState, baseState),
-        user
-      )
-
-      if (!data) {
-        const { error: upsertError } = await supabase
-          .from(TASKED_STATE_TABLE)
-          .upsert(
-            {
-              user_id: user.id,
-              state: nextState,
-            },
-            { onConflict: "user_id" }
-          )
-
-        if (upsertError) {
-          console.error("Unable to create Tasked cloud state:", upsertError.message)
-          setCloudEnabled(false)
-        } else {
-          setCloudEnabled(true)
+        if (!remoteState) {
+          await persistAssignedState(nextState)
         }
-      } else {
-        setCloudEnabled(true)
-      }
 
-      setState(nextState)
-      lastSerializedStateRef.current = JSON.stringify(nextState)
-      setHydrated(true)
+        setState(nextState)
+        lastSerializedStateRef.current = JSON.stringify(nextState)
+        pendingSyncRef.current = false
+        setHydrated(true)
+      } catch (error) {
+        console.error("Assigned server state unavailable:", error instanceof Error ? error.message : error)
+        setState(fallbackState)
+        lastSerializedStateRef.current = JSON.stringify(fallbackState)
+        pendingSyncRef.current = true
+        setHydrated(true)
+      }
     },
-    [supabase]
+    []
   )
 
   useEffect(() => {
-    let active = true
-
-    void supabase.auth.getUser().then(({ data }) => {
-      if (!active) {
-        return
-      }
-
-      void loadStateForUser(data.user ?? null)
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      void loadStateForUser(session?.user ?? null)
-    })
-
-    return () => {
-      active = false
-      subscription.unsubscribe()
+    if (accessLoading) {
+      return
     }
-  }, [loadStateForUser, supabase])
+
+    currentUserRef.current = user
+    void loadStateForUser(user)
+  }, [accessLoading, loadStateForUser, user])
 
   useEffect(() => {
     if (!hydrated) {
@@ -902,42 +937,57 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
     writeStoredState(getStorageKey(userId), state)
 
     if (userId) {
-      window.localStorage.removeItem(LEGACY_STORAGE_KEY)
+      window.localStorage.removeItem(getStorageKey())
+      getLegacyStorageKeys(userId).forEach((storageKey) => {
+        window.localStorage.removeItem(storageKey)
+      })
     }
   }, [hydrated, state, userId])
 
   useEffect(() => {
-    if (!hydrated || !userId || !cloudEnabled) {
+    if (!hydrated || !userId || !isOnline) {
       return
     }
 
     const serializedState = JSON.stringify(state)
-    if (lastSerializedStateRef.current === serializedState) {
+    if (!pendingSyncRef.current && lastSerializedStateRef.current === serializedState) {
       return
     }
 
     const timeout = window.setTimeout(() => {
-      void supabase
-        .from(TASKED_STATE_TABLE)
-        .upsert(
-          {
-            user_id: userId,
-            state,
-          },
-          { onConflict: "user_id" }
-        )
-        .then(({ error }) => {
-          if (error) {
-            console.error("Unable to sync Tasked cloud state:", error.message)
-            return
-          }
-
+      void persistAssignedState(state)
+        .then(() => {
           lastSerializedStateRef.current = serializedState
+          pendingSyncRef.current = false
         })
-    }, 350)
+        .catch((error) => {
+          pendingSyncRef.current = true
+          console.error(
+            "Unable to sync Assigned state to the server:",
+            error instanceof Error ? error.message : error
+          )
+        })
+    }, ASSIGNED_STATE_SYNC_DEBOUNCE_MS)
 
     return () => window.clearTimeout(timeout)
-  }, [cloudEnabled, hydrated, state, supabase, userId])
+  }, [hydrated, isOnline, state, userId])
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return
+    }
+
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
+
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+    }
+  }, [])
 
   const addTask = useCallback((input: AddTaskInput) => {
     const taskId = makeId("task")
@@ -1664,12 +1714,26 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
   }, [hydrated, state.pomodoro.status, state.pomodoro.endsAt])
 
   const exportState = useCallback(() => JSON.stringify(state, null, 2), [state])
-  const resetState = useCallback(() => {
+  const resetState = useCallback(async () => {
     const nextState = createSeedState(buildProfileSeed(currentUserRef.current))
     setState(nextState)
+    pendingSyncRef.current = false
+    lastSerializedStateRef.current = JSON.stringify(nextState)
+
+    if (currentUserRef.current) {
+      try {
+        await deleteAssignedStateOnServer()
+      } catch (error) {
+        pendingSyncRef.current = true
+        console.error(
+          "Unable to reset Assigned state on the server:",
+          error instanceof Error ? error.message : error
+        )
+      }
+    }
   }, [])
 
-  const contextValue = useMemo<TaskedContextValue>(
+  const contextValue = useMemo<AssignedContextValue>(
     () => ({
       ...state,
       hydrated,
@@ -1762,17 +1826,17 @@ export function TaskedStateProvider({ children }: { children: ReactNode }) {
   )
 
   return (
-    <TaskedContext.Provider value={contextValue}>
+    <AssignedContext.Provider value={contextValue}>
       {children}
-    </TaskedContext.Provider>
+    </AssignedContext.Provider>
   )
 }
 
-export function useTaskedState() {
-  const value = useContext(TaskedContext)
+export function useAssignedState() {
+  const value = useContext(AssignedContext)
 
   if (!value) {
-    throw new Error("useTaskedState must be used within TaskedStateProvider")
+    throw new Error("useAssignedState must be used within AssignedStateProvider")
   }
 
   return value

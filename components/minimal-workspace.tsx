@@ -19,14 +19,14 @@ import {
   formatTaskDueChipLabel,
   getTaskPriorityBadgeClass,
   getTaskPriorityBadgeStyle,
-  useTaskedState,
+  useAssignedState,
   type Task,
-} from "@/lib/tasked-store"
+} from "@/lib/assigned-store"
 
 type TaskFilter = "all" | "unassigned" | string
 
 export function MinimalWorkspace() {
-  const { tasks, lists, toggleTask, addList, deleteTask } = useTaskedState()
+  const { tasks, lists, toggleTask, addList, deleteTask } = useAssignedState()
   const [addTaskOpen, setAddTaskOpen] = useState(false)
   const [newListOpen, setNewListOpen] = useState(false)
   const [newListName, setNewListName] = useState("")

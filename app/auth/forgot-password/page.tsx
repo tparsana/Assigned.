@@ -1,12 +1,14 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo, useState } from "react"
+import { useMemo, useState, type FormEvent } from "react"
 import { ArrowLeft, Mail } from "lucide-react"
 
+import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { buildAuthCallbackUrl } from "@/lib/auth-config"
 import { createClient } from "@/lib/supabase/client"
 
 export default function ForgotPasswordPage() {
@@ -16,13 +18,13 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
   const [error, setError] = useState("")
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError("")
     setIsLoading(true)
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/confirm?next=/auth/update-password`,
+      redirectTo: buildAuthCallbackUrl("/auth/update-password"),
     })
 
     setIsLoading(false)
@@ -39,9 +41,7 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen bg-background flex items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-10">
-          <Link href="/" className="text-2xl font-semibold tracking-tight text-foreground">
-            Tasked.
-          </Link>
+          <BrandMark href="/" className="text-2xl text-foreground" />
         </div>
 
         {!isSubmitted ? (
@@ -56,7 +56,7 @@ export default function ForgotPasswordPage() {
 
             <h1 className="text-2xl font-semibold text-foreground mb-2">Reset your password</h1>
             <p className="text-muted-foreground mb-8">
-              Enter your email and we&apos;ll send you instructions to reset your password.
+              Enter your email and we&apos;ll send you a reset link for your Assigned account.
             </p>
 
             <form onSubmit={handleSubmit} className="space-y-6">

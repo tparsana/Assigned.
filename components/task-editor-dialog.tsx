@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { useTaskedState, type BoardColumn, type Task, type TaskPriority } from "@/lib/tasked-store"
+import { useAssignedState, type BoardColumn, type Task, type TaskPriority } from "@/lib/assigned-store"
 
 const boardColumnOptions: Array<{ value: BoardColumn; label: string }> = [
   { value: "inbox", label: "Backlog" },
@@ -54,7 +54,7 @@ type TaskEditorDialogProps = {
 }
 
 export function TaskEditorDialog({ task, open, onOpenChange }: TaskEditorDialogProps) {
-  const { lists, updateTask, deleteTask, moveTaskToColumn } = useTaskedState()
+  const { lists, updateTask, deleteTask, moveTaskToColumn } = useAssignedState()
   const [title, setTitle] = useState("")
   const [listId, setListId] = useState("")
   const [priority, setPriority] = useState<TaskPriority>("none")

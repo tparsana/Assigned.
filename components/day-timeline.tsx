@@ -6,7 +6,7 @@ import { format } from "date-fns"
 import { Brain, Clock, Coffee, Pencil, Users, X } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
-import { formatTimeLabel, type ScheduleBlock } from "@/lib/tasked-store"
+import { formatTimeLabel, type ScheduleBlock } from "@/lib/assigned-store"
 
 const DEFAULT_ROW_HEIGHT = 64
 

@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react"
 import { format } from "date-fns"
-import { formatTaskDateLabel, useTaskedState } from "@/lib/tasked-store"
+import { formatTaskDateLabel, useAssignedState } from "@/lib/assigned-store"
 
 type CaptureState = "idle" | "uploading" | "processing" | "review"
 const LIFE_LIST_ID = "__life__"
@@ -36,7 +36,7 @@ interface ExtractedTask {
 }
 
 export default function CapturePage() {
-  const { addTask, addList, lists, todayKey } = useTaskedState()
+  const { addTask, addList, lists, todayKey } = useAssignedState()
   const lifeListId = lists.find((list) => list.name.trim().toLowerCase() === "life")?.id ?? null
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
   const uploadInputRef = useRef<HTMLInputElement | null>(null)

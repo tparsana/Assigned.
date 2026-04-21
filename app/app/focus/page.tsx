@@ -25,10 +25,10 @@ import {
   getPomodoroRemainingSeconds,
   getTaskListName,
   isPomodoroSessionActive,
-  useTaskedState,
+  useAssignedState,
   type PomodoroMode,
   type Task,
-} from "@/lib/tasked-store"
+} from "@/lib/assigned-store"
 import { ArrowLeft, CheckCircle2, Clock, Pause, Play, RotateCcw, X } from "lucide-react"
 
 const MODE_SEQUENCE: PomodoroMode[] = ["focus", "shortBreak", "longBreak"]
@@ -117,7 +117,7 @@ function FocusDial({
 
       <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${size} ${size}`}>
         <defs>
-          <linearGradient id="tasked-focus-progress" x1="0%" y1="0%" x2="100%" y2="100%">
+          <linearGradient id="assigned-focus-progress" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor="var(--foreground)" stopOpacity="0.92" />
             <stop offset="100%" stopColor="var(--foreground)" stopOpacity="0.28" />
           </linearGradient>
@@ -137,7 +137,7 @@ function FocusDial({
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="url(#tasked-focus-progress)"
+          stroke="url(#assigned-focus-progress)"
           strokeWidth="10"
           strokeLinecap="round"
           strokeDasharray={circumference}
@@ -224,7 +224,7 @@ export default function FocusPage() {
     resumePomodoro,
     resetPomodoro,
     endPomodoroSession,
-  } = useTaskedState()
+  } = useAssignedState()
 
   const [timerNow, setTimerNow] = useState(() => Date.now())
   const [exitDialogOpen, setExitDialogOpen] = useState(false)
@@ -326,7 +326,7 @@ export default function FocusPage() {
             className="text-[1.9rem] font-semibold tracking-tight text-foreground/10"
             style={{ textShadow: "0 12px 32px rgba(28, 28, 28, 0.14)" }}
           >
-            Tasked.
+            Assigned
           </div>
 
           <Button

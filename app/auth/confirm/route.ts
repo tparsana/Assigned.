@@ -42,4 +42,3 @@ export async function GET(request: NextRequest) {
   errorUrl.searchParams.set("error", "The authentication link is invalid or has expired.")
   return NextResponse.redirect(errorUrl)
 }
-

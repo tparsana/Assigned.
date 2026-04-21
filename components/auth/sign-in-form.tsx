@@ -1,25 +1,31 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Eye, EyeOff } from "lucide-react"
 
+import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { buildAuthCallbackUrl } from "@/lib/auth-config"
 import { createClient } from "@/lib/supabase/client"
 
-export function SignInForm() {
+export function SignInForm({ message }: { message?: string }) {
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   const [showPassword, setShowPassword] = useState(false)
   const [isCheckingSession, setIsCheckingSession] = useState(true)
-  const [isLoading, setIsLoading] = useState(false)
+  const [activeMethod, setActiveMethod] = useState<"password" | "google" | null>(null)
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState("")
-  const [info, setInfo] = useState("")
+  const [info, setInfo] = useState(message ?? "")
+
+  useEffect(() => {
+    setInfo(message ?? "")
+  }, [message])
 
   useEffect(() => {
     let active = true
@@ -43,31 +49,51 @@ export function SignInForm() {
     }
   }, [router, supabase])
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    setInfo(params.get("error") ?? "")
-  }, [])
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setError("")
     setInfo("")
-    setIsLoading(true)
+    setActiveMethod("password")
 
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
 
-    setIsLoading(false)
-
     if (signInError) {
       setError(signInError.message)
+      setActiveMethod(null)
       return
     }
 
     router.replace("/app")
     router.refresh()
+  }
+
+  const handleGoogleSignIn = async () => {
+    setError("")
+    setInfo("")
+    setActiveMethod("google")
+
+    const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: buildAuthCallbackUrl("/app"),
+      },
+    })
+
+    if (oauthError) {
+      setError(oauthError.message)
+      setActiveMethod(null)
+      return
+    }
+
+    if (data.url) {
+      window.location.assign(data.url)
+      return
+    }
+
+    setActiveMethod(null)
   }
 
   if (isCheckingSession) {
@@ -76,9 +102,7 @@ export function SignInForm() {
         <div className="flex-1 flex items-center justify-center px-6 py-12">
           <div className="w-full max-w-sm">
             <div className="mb-10">
-              <Link href="/" className="text-2xl font-semibold tracking-tight text-foreground">
-                Tasked.
-              </Link>
+              <BrandMark href="/" className="text-2xl text-foreground" />
             </div>
 
             <div className="rounded-2xl border border-border bg-card p-8 text-center">
@@ -93,10 +117,10 @@ export function SignInForm() {
         <div className="hidden lg:flex flex-1 bg-primary items-center justify-center p-12">
           <div className="max-w-md text-center">
             <div className="text-5xl font-semibold text-primary-foreground mb-6">
-              Clarity awaits
+              Work stays aligned
             </div>
             <p className="text-primary-foreground/80 text-lg">
-              Your tasks are organized, your day is planned. Let&apos;s make progress together.
+              Assigned keeps Samaya&apos;s projects, teams, and daily follow-through moving through one shared system.
             </p>
           </div>
         </div>
@@ -109,13 +133,32 @@ export function SignInForm() {
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-10">
-            <Link href="/" className="text-2xl font-semibold tracking-tight text-foreground">
-              Tasked.
-            </Link>
+            <BrandMark href="/" className="text-2xl text-foreground" />
           </div>
 
-          <h1 className="text-2xl font-semibold text-foreground mb-2">Welcome back</h1>
-          <p className="text-muted-foreground mb-8">Sign in to continue your planning</p>
+          <h1 className="text-2xl font-semibold text-foreground mb-2">Sign in to Assigned</h1>
+          <p className="text-muted-foreground mb-8">
+            Access Samaya&apos;s task and assignment workspace.
+          </p>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="h-12 w-full justify-center gap-3 border-border bg-card"
+            onClick={handleGoogleSignIn}
+            disabled={activeMethod !== null}
+          >
+            {activeMethod === "google" ? "Redirecting to Google..." : "Continue with Google"}
+          </Button>
+
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-[11px] uppercase tracking-[0.28em]">
+              <span className="bg-background px-3 text-muted-foreground">or use email</span>
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-2">
@@ -167,9 +210,9 @@ export function SignInForm() {
             <Button
               type="submit"
               className="w-full h-12 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg"
-              disabled={isLoading}
+              disabled={activeMethod !== null}
             >
-              {isLoading ? "Signing in..." : "Sign In"}
+              {activeMethod === "password" ? "Signing in..." : "Sign In"}
             </Button>
           </form>
 
@@ -185,13 +228,21 @@ export function SignInForm() {
       </div>
 
       <div className="hidden lg:flex flex-1 bg-primary items-center justify-center p-12">
-        <div className="max-w-md text-center">
+        <div className="max-w-md">
           <div className="text-5xl font-semibold text-primary-foreground mb-6">
-            Clarity awaits
+            Supabase auth is back
           </div>
-          <p className="text-primary-foreground/80 text-lg">
-            Your tasks are organized, your day is planned. Let&apos;s make progress together.
-          </p>
+          <div className="space-y-4 text-primary-foreground/85">
+            {[
+              "Email and password auth run through Supabase.",
+              "Google OAuth is available from the same sign-in screen.",
+              "The app shell and state sync stay aligned with the new Supabase project.",
+            ].map((item) => (
+              <div key={item} className="rounded-2xl border border-primary-foreground/15 bg-primary-foreground/5 px-4 py-4">
+                {item}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

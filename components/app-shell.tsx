@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useMemo, useState } from "react"
 
 import { AddTaskDialog } from "@/components/add-task-dialog"
+import { BrandMark } from "@/components/brand-mark"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -19,15 +20,13 @@ import {
   formatPomodoroClock,
   getPomodoroModeLabel,
   getPomodoroRemainingSeconds,
-  useTaskedState,
-} from "@/lib/tasked-store"
+  useAssignedState,
+} from "@/lib/assigned-store"
 import {
   LayoutDashboard,
-  CalendarDays,
   Calendar,
-  LayoutGrid,
-  FolderOpen,
-  BookOpen,
+  CheckSquare,
+  BriefcaseBusiness,
   Settings,
   Plus,
   Menu,
@@ -35,16 +34,16 @@ import {
   ChevronDown,
   LogOut,
   User,
+  Users,
   Clock,
 } from "lucide-react"
 
 const sidebarItems = [
-  { href: "/app", label: "Today", icon: LayoutDashboard },
-  { href: "/app/planner", label: "Daily Planner", icon: CalendarDays },
+  { href: "/app", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/app/my-tasks", label: "My Tasks", icon: CheckSquare },
+  { href: "/app/projects", label: "Projects", icon: BriefcaseBusiness },
+  { href: "/app/team", label: "Team", icon: Users },
   { href: "/app/calendar", label: "Calendar", icon: Calendar },
-  { href: "/app/kanban", label: "Kanban", icon: LayoutGrid },
-  { href: "/app/lists", label: "Lists", icon: FolderOpen },
-  { href: "/app/review", label: "Weekly Review", icon: BookOpen },
   { href: "/app/settings", label: "Settings", icon: Settings },
 ]
 
@@ -60,7 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
-  const { profile, preferences, todayKey, hydrated, pomodoro } = useTaskedState()
+  const { profile, preferences, todayKey, hydrated, pomodoro } = useAssignedState()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [quoteIndex, setQuoteIndex] = useState(0)
@@ -199,9 +198,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {!isMinimalMode && (
       <aside className="hidden lg:flex flex-col w-64 bg-sidebar border-r border-sidebar-border">
         <div className="p-6">
-          <Link href="/app" className="text-2xl font-semibold tracking-tight text-sidebar-foreground">
-            Tasked.
-          </Link>
+          <BrandMark href="/app" className="text-2xl text-sidebar-foreground" />
         </div>
 
         <nav className="flex-1 px-4 space-y-1">
@@ -240,9 +237,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           />
           <aside className="relative w-72 bg-sidebar flex flex-col">
             <div className="p-6 flex items-center justify-between">
-              <Link href="/app" className="text-2xl font-semibold tracking-tight text-sidebar-foreground">
-                Tasked.
-              </Link>
+              <BrandMark href="/app" className="text-2xl text-sidebar-foreground" />
               <button onClick={() => setSidebarOpen(false)} className="text-sidebar-foreground">
                 <X className="w-6 h-6" />
               </button>
@@ -285,9 +280,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </button>
               )}
               {isMinimalMode && (
-                <Link href="/app" className="text-xl font-semibold tracking-tight text-foreground">
-                  Tasked.
-                </Link>
+                <BrandMark href="/app" className="text-xl text-foreground" />
               )}
               <div className="min-w-0">
                 <div className="text-sm text-muted-foreground truncate">
@@ -352,10 +345,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-background border-t border-border px-2 py-2 z-40">
           <div className="flex items-center justify-around">
             {[
-              { href: "/app", icon: LayoutDashboard, label: "Today" },
-              { href: "/app/planner", icon: CalendarDays, label: "Plan" },
-              { href: "/app/lists", icon: FolderOpen, label: "Lists" },
-              { href: "/app/kanban", icon: LayoutGrid, label: "Board" },
+              { href: "/app", icon: LayoutDashboard, label: "Dashboard" },
+              { href: "/app/my-tasks", icon: CheckSquare, label: "My Tasks" },
+              { href: "/app/projects", icon: BriefcaseBusiness, label: "Projects" },
+              { href: "/app/calendar", icon: Calendar, label: "Calendar" },
             ].map((item) => {
               const isActive = pathname === item.href
               return (

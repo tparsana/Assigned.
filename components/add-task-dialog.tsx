@@ -1,9 +1,20 @@
 "use client"
 
-import Link from "next/link"
-import { useEffect, useState } from "react"
-import { Camera, Plus } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { Loader2, Trash2 } from "lucide-react"
 
+import type { TaskSummary } from "@/lib/task-data"
+import {
+  assignedTaskPriorityOptions,
+  assignedTaskStatusOptions,
+  getTaskPriorityLabel,
+  getTaskStatusLabel,
+  type AssignedTaskPriority,
+  type AssignedTaskStatus,
+  type WorkspaceMemberOption,
+  type WorkspaceProjectOption,
+} from "@/lib/task-data"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -14,276 +25,404 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { useTaskedState, type BoardColumn, type TaskPriority } from "@/lib/tasked-store"
+import { Textarea } from "@/components/ui/textarea"
 
-export const LIFE_LIST_ID = "__life__"
-
-function mergeEstimatedMinutes(hours: string, minutes: string) {
-  const normalizedHours = Number(hours || "0")
-  const normalizedMinutes = Number(minutes || "0")
-  const total = normalizedHours * 60 + normalizedMinutes
-
-  return total > 0 ? total : null
+type TaskFormOptions = {
+  members: WorkspaceMemberOption[]
+  projects: WorkspaceProjectOption[]
+  categories: string[]
 }
 
 type AddTaskDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultListId?: string
-  defaultBoardColumn?: BoardColumn
+  defaultBoardColumn?: string
   defaultPlannedDate?: string | null
   title?: string
   description?: string
   showCaptureOption?: boolean
+  task?: TaskSummary | null
+  onSuccess?: (taskId: string) => void
+  onDelete?: () => void
+  preferredAssigneeUserId?: string | null
+  lockAssignee?: boolean
+}
+
+async function readJson<T>(response: Response) {
+  return (await response.json().catch(() => ({}))) as T
 }
 
 export function AddTaskDialog({
   open,
   onOpenChange,
-  defaultListId,
-  defaultBoardColumn,
   defaultPlannedDate,
-  title = "Add task",
-  description = "Create a task and place it where you need it.",
-  showCaptureOption = true,
+  title,
+  description,
+  task = null,
+  onSuccess,
+  onDelete,
+  preferredAssigneeUserId = null,
+  lockAssignee = false,
 }: AddTaskDialogProps) {
-  const { addTask, addList, lists, todayKey } = useTaskedState()
-  const lifeListId = lists.find((list) => list.name.trim().toLowerCase() === "life")?.id ?? null
-  const resolveListValue = (value?: string) => {
-    if (value === LIFE_LIST_ID && lifeListId) {
-      return lifeListId
-    }
+  const router = useRouter()
+  const [options, setOptions] = useState<TaskFormOptions>({
+    members: [],
+    projects: [],
+    categories: [],
+  })
+  const [loadingOptions, setLoadingOptions] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState("")
 
-    return value ?? lists[0]?.id ?? ""
-  }
-  const fallbackListId = resolveListValue(defaultListId)
-  const [mode, setMode] = useState<"options" | "manual">(showCaptureOption ? "options" : "manual")
-  const [taskTitle, setTaskTitle] = useState("")
-  const [listId, setListId] = useState(fallbackListId)
-  const [priority, setPriority] = useState<TaskPriority>("none")
-  const [plannedDate, setPlannedDate] = useState(defaultPlannedDate ?? todayKey)
-  const [estimatedHours, setEstimatedHours] = useState("")
-  const [estimatedMinutes, setEstimatedMinutes] = useState("30")
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    assigneeUserId: "",
+    category: "",
+    projectId: "",
+    dueDate: "",
+    status: "open" as AssignedTaskStatus,
+    priority: "" as "" | AssignedTaskPriority,
+    attachmentUrl: "",
+  })
+
+  const isEditMode = Boolean(task)
 
   useEffect(() => {
     if (!open) {
       return
     }
 
-    setTaskTitle("")
-    setListId(resolveListValue(defaultListId))
-    setPriority("none")
-    setPlannedDate(defaultPlannedDate ?? todayKey)
-    setEstimatedHours("")
-    setEstimatedMinutes("30")
-    setMode(showCaptureOption ? "options" : "manual")
-  }, [defaultListId, defaultPlannedDate, lifeListId, lists, open, showCaptureOption, todayKey])
+    let active = true
+    setLoadingOptions(true)
+    setError("")
 
-  const closeDialog = () => {
-    setMode(showCaptureOption ? "options" : "manual")
-    onOpenChange(false)
-  }
+    void fetch("/api/tasks/options", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await readJson<TaskFormOptions & { error?: string }>(response)
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Unable to load task options.")
+        }
 
-  const handleSubmit = () => {
-    const titleValue = taskTitle.trim()
-    if (!titleValue) {
-      return
-    }
-
-    const resolvedListId =
-      listId === LIFE_LIST_ID
-        ? lifeListId ?? addList("Life")
-        : listId
-
-    addTask({
-      title: titleValue,
-      listId: resolvedListId,
-      priority,
-      plannedDate: plannedDate || null,
-      dueDate: plannedDate || null,
-      estimatedMinutes: mergeEstimatedMinutes(estimatedHours, estimatedMinutes),
-      boardColumn: defaultBoardColumn ?? "today",
-    })
-
-    closeDialog()
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) {
-          closeDialog()
+        if (!active) {
           return
         }
 
-        onOpenChange(true)
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        {showCaptureOption && mode === "options" ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>{title}</DialogTitle>
-              <DialogDescription>{description}</DialogDescription>
-            </DialogHeader>
+        setOptions({
+          members: payload.members ?? [],
+          projects: payload.projects ?? [],
+          categories: payload.categories ?? [],
+        })
+      })
+      .catch((loadError) => {
+        if (!active) {
+          return
+        }
 
-            <div className="grid gap-3">
-              <button
-                onClick={() => setMode("manual")}
-                className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Plus className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="font-medium text-foreground">Manual add</div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Type a task directly into your list.
-                  </p>
-                </div>
-              </button>
+        setError(loadError instanceof Error ? loadError.message : "Unable to load task options.")
+      })
+      .finally(() => {
+        if (active) {
+          setLoadingOptions(false)
+        }
+      })
 
-              <Link
-                href="/app/capture"
-                onClick={closeDialog}
-                className="flex items-start gap-3 rounded-xl border border-border bg-card p-4 text-left transition-colors hover:bg-muted/40"
-              >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  <Camera className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="font-medium text-foreground">Capture photo</div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Review and edit extracted tasks before adding them.
-                  </p>
-                </div>
-              </Link>
-            </div>
-          </>
+    return () => {
+      active = false
+    }
+  }, [open])
+
+  const defaultAssigneeId = useMemo(() => {
+    if (task?.assignee.userId) {
+      return task.assignee.userId
+    }
+
+    if (preferredAssigneeUserId && options.members.some((member) => member.userId === preferredAssigneeUserId)) {
+      return preferredAssigneeUserId
+    }
+
+    return options.members[0]?.userId ?? ""
+  }, [options.members, preferredAssigneeUserId, task])
+
+  const defaultCategory = useMemo(() => {
+    if (task?.category) {
+      return task.category
+    }
+
+    return options.categories[0] ?? "General"
+  }, [options.categories, task])
+
+  useEffect(() => {
+    if (!open) {
+      return
+    }
+
+    setForm({
+      title: task?.title ?? "",
+      description: task?.description ?? "",
+      assigneeUserId: defaultAssigneeId,
+      category: defaultCategory,
+      projectId: task?.project?.id ?? "",
+      dueDate: task?.dueDate?.slice(0, 10) ?? defaultPlannedDate ?? "",
+      status: task?.status ?? "open",
+      priority: task?.priority ?? "",
+      attachmentUrl: "",
+    })
+  }, [defaultAssigneeId, defaultCategory, defaultPlannedDate, open, task])
+
+  const closeDialog = () => {
+    setError("")
+    onOpenChange(false)
+  }
+
+  const handleSave = async () => {
+    if (!form.title.trim() || !form.assigneeUserId || !form.category.trim()) {
+      setError("Title, assignee, and category are required.")
+      return
+    }
+
+    setSaving(true)
+    setError("")
+
+    const payload = {
+      title: form.title.trim(),
+      description: form.description.trim() || null,
+      assigneeUserId: form.assigneeUserId,
+      category: form.category.trim(),
+      projectId: form.projectId || null,
+      dueDate: form.dueDate || null,
+      status: form.status,
+      priority: form.priority || null,
+      attachmentUrl: form.attachmentUrl.trim() || null,
+    }
+
+    const response = await fetch(isEditMode ? `/api/tasks/${task?.id}` : "/api/tasks", {
+      method: isEditMode ? "PATCH" : "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const result = await readJson<{ error?: string; id?: string }>(response)
+    setSaving(false)
+
+    if (!response.ok) {
+      setError(result.error ?? `Unable to ${isEditMode ? "update" : "create"} the task.`)
+      return
+    }
+
+    closeDialog()
+    router.refresh()
+    if (result.id) {
+      onSuccess?.(result.id)
+    } else if (task?.id) {
+      onSuccess?.(task.id)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!task) {
+      return
+    }
+
+    setDeleting(true)
+    setError("")
+
+    const response = await fetch(`/api/tasks/${task.id}`, {
+      method: "DELETE",
+    })
+    const result = await readJson<{ error?: string }>(response)
+    setDeleting(false)
+
+    if (!response.ok) {
+      setError(result.error ?? "Unable to delete the task.")
+      return
+    }
+
+    closeDialog()
+    router.refresh()
+    onDelete?.()
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{title ?? (isEditMode ? "Edit task" : "Create task")}</DialogTitle>
+          <DialogDescription>
+            {description ?? "Keep it fast. Title, assignee, and category are the only required fields."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {loadingOptions ? (
+          <div className="flex min-h-[240px] items-center justify-center text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Loading task form...
+          </div>
         ) : (
-          <>
-            <DialogHeader>
-              <DialogTitle>{showCaptureOption ? "Manual add" : title}</DialogTitle>
-              <DialogDescription>
-                {showCaptureOption ? "Add a task directly to your system." : description}
-              </DialogDescription>
-            </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Title</label>
+              <Input
+                autoFocus
+                value={form.title}
+                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                placeholder="What needs to get done?"
+              />
+            </div>
 
-            <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">Description</label>
+              <Textarea
+                value={form.description}
+                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                placeholder="Add context, notes, or handoff details."
+                className="min-h-28"
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Task</label>
-                <Input
-                  autoFocus
-                  value={taskTitle}
-                  onChange={(event) => setTaskTitle(event.target.value)}
-                  placeholder="What needs to get done?"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">List</label>
-                  <select
-                    value={listId}
-                    onChange={(event) => setListId(event.target.value)}
-                    className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
-                  >
-                    {lists.length === 0 ? (
-                      <>
-                        <option value="">No lists yet</option>
-                        {!lifeListId ? <option value={LIFE_LIST_ID}>Life</option> : null}
-                      </>
-                    ) : (
-                      <>
-                        {lists.map((list) => (
-                          <option key={list.id} value={list.id}>
-                            {list.name}
-                          </option>
-                        ))}
-                        {!lifeListId ? <option value={LIFE_LIST_ID}>Life</option> : null}
-                      </>
-                    )}
-                  </select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Priority</label>
-                  <select
-                    value={priority}
-                  onChange={(event) => setPriority(event.target.value as TaskPriority)}
+                <label className="text-sm font-medium text-foreground">Assignee</label>
+                <select
+                  value={form.assigneeUserId}
+                  onChange={(event) => setForm((current) => ({ ...current, assigneeUserId: event.target.value }))}
+                  disabled={lockAssignee}
                   className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
                 >
-                  <option value="none">None</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                  </select>
-                </div>
+                  {options.members.map((member) => (
+                    <option key={member.userId} value={member.userId}>
+                      {member.fullName}
+                      {member.teamName ? ` · ${member.teamName}` : ""}
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Planned date</label>
-                  <Input
-                    type="date"
-                    value={plannedDate ?? ""}
-                    onChange={(event) => setPlannedDate(event.target.value)}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">Estimated time</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={estimatedHours}
-                      onChange={(event) => setEstimatedHours(event.target.value)}
-                      placeholder="0 hr"
-                    />
-                    <Input
-                      type="number"
-                      min="0"
-                      max="59"
-                      step="5"
-                      value={estimatedMinutes}
-                      onChange={(event) => setEstimatedMinutes(event.target.value)}
-                      placeholder="0 min"
-                    />
-                  </div>
-                </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Category</label>
+                <select
+                  value={form.category}
+                  onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                >
+                  {options.categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
-            <DialogFooter>
-              {showCaptureOption ? (
-                <Button variant="ghost" onClick={() => setMode("options")}>
-                  Back
-                </Button>
-              ) : (
-                <Button variant="ghost" onClick={closeDialog}>
-                  Cancel
-                </Button>
-              )}
-              <div className="flex items-center gap-2">
-                {showCaptureOption && (
-                  <Button variant="ghost" onClick={closeDialog}>
-                    Cancel
-                  </Button>
-                )}
-                <Button
-                  onClick={handleSubmit}
-                  disabled={!taskTitle.trim()}
-                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Project (optional)</label>
+                <select
+                  value={form.projectId}
+                  onChange={(event) => setForm((current) => ({ ...current, projectId: event.target.value }))}
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
                 >
-                  Add Task
-                </Button>
+                  <option value="">No project</option>
+                  {options.projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            </DialogFooter>
-          </>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Due date</label>
+                <Input
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(event) => setForm((current) => ({ ...current, dueDate: event.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Status</label>
+                <select
+                  value={form.status}
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, status: event.target.value as AssignedTaskStatus }))
+                  }
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                >
+                  {assignedTaskStatusOptions
+                    .filter((status) => status !== "cancelled")
+                    .map((status) => (
+                      <option key={status} value={status}>
+                        {getTaskStatusLabel(status)}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Priority</label>
+                <select
+                  value={form.priority}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      priority: event.target.value as "" | AssignedTaskPriority,
+                    }))
+                  }
+                  className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm text-foreground"
+                >
+                  <option value="">No priority</option>
+                  {assignedTaskPriorityOptions.map((priority) => (
+                    <option key={priority} value={priority}>
+                      {getTaskPriorityLabel(priority)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {!isEditMode && (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Attachment URL (optional)</label>
+                <Input
+                  value={form.attachmentUrl}
+                  onChange={(event) => setForm((current) => ({ ...current, attachmentUrl: event.target.value }))}
+                  placeholder="https://..."
+                />
+              </div>
+            )}
+
+            {error ? <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">{error}</div> : null}
+          </div>
         )}
+
+        <DialogFooter className="items-center">
+          {isEditMode ? (
+            <Button
+              type="button"
+              variant="outline"
+              className="mr-auto border-destructive/20 text-destructive hover:bg-destructive/5 hover:text-destructive"
+              disabled={saving || deleting}
+              onClick={() => void handleDelete()}
+            >
+              {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Delete
+            </Button>
+          ) : null}
+          <Button variant="ghost" onClick={closeDialog} disabled={saving || deleting}>
+            Cancel
+          </Button>
+          <Button onClick={() => void handleSave()} disabled={saving || deleting || loadingOptions}>
+            {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            {isEditMode ? "Save changes" : "Create task"}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )

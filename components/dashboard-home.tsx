@@ -6,12 +6,12 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Calendar, CheckCircle2, ChevronRight, ListTodo } from "lucide-react"
 
 import { DayTimeline, buildCompactHours } from "@/components/day-timeline"
-import { getScheduledBlocksForDate, getTasksForDate, useTaskedState } from "@/lib/tasked-store"
+import { getScheduledBlocksForDate, getTasksForDate, useAssignedState } from "@/lib/assigned-store"
 
 const FULL_DAY_HOURS = Array.from({ length: 24 }, (_, index) => index)
 
 export function DashboardHome() {
-  const { profile, tasks, scheduleBlocks, todayKey, toggleTask } = useTaskedState()
+  const { profile, tasks, scheduleBlocks, todayKey, toggleTask } = useAssignedState()
   const [now, setNow] = useState(() => new Date())
   const [isDesktop, setIsDesktop] = useState(false)
   const [taskCardHeight, setTaskCardHeight] = useState<number | null>(null)

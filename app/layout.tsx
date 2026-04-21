@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Hanken_Grotesk, Geist_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import { Providers } from '@/components/providers'
+import { appConfig } from '@/lib/app-config'
 import './globals.css'
 
 const hankenGrotesk = Hanken_Grotesk({ 
@@ -17,9 +18,9 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Tasked. | Turn Chaos Into Clear Daily Action',
-  description: 'A sophisticated personal planning system that helps you capture, organize, and execute daily tasks using multiple productivity methods in one calm, minimal interface.',
-  generator: 'v0.app',
+  title: `${appConfig.productName} | ${appConfig.productTagline}`,
+  description: appConfig.productDescription,
+  applicationName: appConfig.productName,
   manifest: '/site.webmanifest',
   icons: {
     icon: [
