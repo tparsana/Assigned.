@@ -53,8 +53,8 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="relative overflow-hidden border-b border-border bg-[radial-gradient(circle_at_top_left,rgba(171,204,255,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(238,191,102,0.16),transparent_26%),linear-gradient(180deg,#fafaff_0%,#f4f7fb_100%)]">
-        <nav className="fixed inset-x-0 top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-md">
+      <div className="relative overflow-hidden border-b border-border bg-[radial-gradient(circle_at_top_left,rgba(171,204,255,0.18),transparent_34%),radial-gradient(circle_at_top_right,rgba(238,191,102,0.16),transparent_26%),linear-gradient(180deg,#fafaff_0%,#f4f7fb_100%)] dark:bg-[radial-gradient(circle_at_top_left,rgba(142,175,255,0.16),transparent_30%),radial-gradient(circle_at_top_right,rgba(236,191,102,0.11),transparent_24%),linear-gradient(180deg,#000000_0%,#050505_55%,#000000_100%)]">
+        <nav className="fixed inset-x-0 top-0 z-50 border-b border-border/70 bg-background/80 backdrop-blur-md dark:border-white/8 dark:bg-black/80">
           <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
             <BrandMark className="text-2xl text-foreground" />
 
@@ -89,7 +89,7 @@ export default function LandingPage() {
           </div>
 
           {mobileMenuOpen ? (
-            <div className="space-y-4 border-t border-border px-6 py-4 md:hidden">
+            <div className="space-y-4 border-t border-border bg-background/95 px-6 py-4 backdrop-blur-md md:hidden dark:border-white/8 dark:bg-black/95">
               <Link href="#foundation" className="block text-sm text-muted-foreground">
                 Foundation
               </Link>
@@ -116,7 +116,7 @@ export default function LandingPage() {
         <section className="relative px-6 pb-20 pt-32">
           <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[1.15fr_0.85fr] lg:items-center">
             <div>
-              <div className="inline-flex items-center rounded-full border border-border bg-background/85 px-4 py-2 text-sm text-muted-foreground shadow-sm">
+              <div className="inline-flex items-center rounded-full border border-border bg-background/85 px-4 py-2 text-sm text-muted-foreground shadow-sm dark:border-white/10 dark:bg-white/[0.04] dark:text-white/70">
                 Collaborative task assignment, planning, and follow-through.
               </div>
               <h1 className="mt-8 max-w-4xl text-5xl font-semibold leading-[1.02] tracking-tight text-foreground md:text-7xl">
@@ -134,7 +134,7 @@ export default function LandingPage() {
                   </Button>
                 </Link>
                 <Link href="#foundation">
-                  <Button size="lg" variant="outline" className="h-12 rounded-full border-foreground/15 px-8 text-base">
+                  <Button size="lg" variant="outline" className="h-12 rounded-full border-foreground/15 bg-background/70 px-8 text-base dark:border-white/12 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]">
                     See the foundation
                   </Button>
                 </Link>
@@ -146,7 +146,7 @@ export default function LandingPage() {
                   "Project-linked work when you need it",
                   "Clean, modular UI ready to evolve",
                 ].map((item) => (
-                  <div key={item} className="rounded-full border border-border bg-background/80 px-4 py-2">
+                  <div key={item} className="rounded-full border border-border bg-background/80 px-4 py-2 dark:border-white/8 dark:bg-white/[0.03] dark:text-white/75">
                     {item}
                   </div>
                 ))}
@@ -154,15 +154,15 @@ export default function LandingPage() {
             </div>
 
             <div className="relative">
-              <div className="absolute inset-0 -translate-x-4 translate-y-4 rounded-[2rem] bg-primary/8 blur-3xl" />
-              <div className="relative overflow-hidden rounded-[2rem] border border-border bg-card shadow-[0_25px_80px_rgba(28,28,28,0.08)]">
-                <div className="border-b border-border bg-background/75 px-6 py-4">
+              <div className="absolute inset-0 -translate-x-4 translate-y-4 rounded-[2rem] bg-primary/8 blur-3xl dark:bg-white/[0.04]" />
+              <div className="relative overflow-hidden rounded-[2rem] border border-border bg-card shadow-[0_25px_80px_rgba(28,28,28,0.08)] dark:border-white/10 dark:bg-[#050505] dark:shadow-[0_35px_90px_rgba(0,0,0,0.6)]">
+                <div className="border-b border-border bg-background/75 px-6 py-4 dark:border-white/8 dark:bg-white/[0.03]">
                   <div className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
                     Assigned Workspace Snapshot
                   </div>
                 </div>
                 <div className="grid gap-4 p-6">
-                  <div className="rounded-2xl border border-border bg-background p-5">
+                  <div className="rounded-2xl border border-border bg-background p-5 dark:border-white/8 dark:bg-white/[0.02]">
                     <div className="mb-4 flex items-center gap-2">
                       <Users className="h-5 w-5 text-primary" />
                       <div className="text-sm font-medium text-foreground">Shared priorities</div>
@@ -173,8 +173,8 @@ export default function LandingPage() {
                         "Review team handoffs before the afternoon check-in",
                         "Close pending approvals and unblock active work",
                       ].map((item, index) => (
-                        <div key={item} className="flex items-start gap-3 rounded-xl bg-card px-3 py-3">
-                          <div className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${index === 0 ? "border-herb bg-herb/10" : "border-border"}`}>
+                        <div key={item} className="flex items-start gap-3 rounded-xl bg-card px-3 py-3 dark:bg-white/[0.03]">
+                          <div className={`mt-0.5 flex h-5 w-5 items-center justify-center rounded-full border ${index === 0 ? "border-herb bg-herb/10 dark:border-white/15 dark:bg-white/[0.08]" : "border-border dark:border-white/10"}`}>
                             {index === 0 ? <CheckCircle2 className="h-4 w-4 text-herb" /> : null}
                           </div>
                           <div className="text-sm text-foreground">{item}</div>
@@ -184,7 +184,7 @@ export default function LandingPage() {
                   </div>
 
                   <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-border bg-celeste/20 p-5">
+                    <div className="rounded-2xl border border-border bg-celeste/20 p-5 dark:border-white/8 dark:bg-white/[0.03]">
                       <div className="mb-3 flex items-center gap-2">
                         <CalendarDays className="h-5 w-5 text-foreground" />
                         <div className="text-sm font-medium text-foreground">Today&apos;s cadence</div>
@@ -196,7 +196,7 @@ export default function LandingPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-2xl border border-border bg-marigold/10 p-5">
+                    <div className="rounded-2xl border border-border bg-marigold/10 p-5 dark:border-white/8 dark:bg-white/[0.02]">
                       <div className="mb-3 flex items-center gap-2">
                         <Building2 className="h-5 w-5 text-foreground" />
                         <div className="text-sm font-medium text-foreground">What stays connected</div>
@@ -241,7 +241,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="bg-card px-6 py-20">
+      <section className="bg-card px-6 py-20 dark:bg-[#040404]">
         <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
           <div>
             <div className="text-sm font-medium uppercase tracking-[0.22em] text-muted-foreground">
@@ -261,7 +261,7 @@ export default function LandingPage() {
               "Google auth can be enabled through one flag once the provider is configured in Supabase.",
               "Branding is pulled into shared config so Assigned can keep evolving without another full sweep later.",
             ].map((item) => (
-              <div key={item} className="flex items-start gap-4 rounded-2xl border border-border bg-background px-5 py-5">
+              <div key={item} className="flex items-start gap-4 rounded-2xl border border-border bg-background px-5 py-5 dark:border-white/8 dark:bg-white/[0.03]">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 text-herb" />
                 <div className="text-sm leading-6 text-foreground">{item}</div>
               </div>
@@ -295,7 +295,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="access" className="bg-card px-6 py-24">
+      <section id="access" className="bg-card px-6 py-24 dark:bg-[#040404]">
         <div className="mx-auto max-w-3xl text-center">
           <h2 className="text-3xl font-semibold text-foreground md:text-5xl">
             Ready to run work through Assigned?
